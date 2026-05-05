@@ -1,6 +1,5 @@
-# Internal — not for public repo
-signal-harvester-capstone-rubric.pdf
-brainstorm-summary.md
+# Internal reference folder — not for public repo
+internal/
 
 # Python
 __pycache__/
