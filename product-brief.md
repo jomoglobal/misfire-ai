@@ -1,5 +1,5 @@
 # Product Brief
-*OBD2 AI Diagnostic Pipeline · Capstone Part 1 · May 2026*
+*MisfireAI · May 2026*
 
 ---
 

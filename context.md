@@ -1,5 +1,5 @@
 # Agent Context
-*OBD2 AI Diagnostic Pipeline · Capstone Part 1 · May 2026*
+*MisfireAI · May 2026*
 
 ## Identity
 Diagnostic analysis agent for vehicle OBD2 data. Ingests sensor data from any supported source,
