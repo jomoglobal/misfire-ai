@@ -208,15 +208,20 @@ Frequency: 1 Hz is acceptable for session analysis. 10Hz+ preferred for transien
 
 ---
 
-## Critical Gap Across All Sources
+## Mode 06 — Gap and Plan
 
-**Mode 06 data is absent from every public dataset.** Mode 06 (On-Board Monitor Test Results) is where MisfireAI's predictive scoring lives — the margin between a measured monitor value and its pass/fail threshold. No public dataset provides this. The only sources for Mode 06 data are:
+**Mode 06 data is absent from every public dataset.** Mode 06 (On-Board Monitor Test Results) provides the raw measured value plus min/max thresholds for on-board monitors — catalyst efficiency, O2 sensor response, EGR flow, etc. A standard scanner says pass/fail. Mode 06 says how far from the threshold you actually are.
 
-1. Live capture via your own hardware (ELM327, Dragy, Techstream)
-2. Proprietary scan tool exports (Techstream, ISTA, FORScan)
-3. Real vehicle sessions you collect yourself
+MisfireAI does **not** depend on Mode 06 for predictive scoring. The primary scoring methods are fuel trim trending and statistical baseline deviation — both work on Mode 01 data from any hardware. Mode 06 is a **third scoring method** that enhances prediction when available.
 
-This is actually a competitive advantage for MisfireAI — it uses data that no existing academic dataset captures.
+**Mode 06 research plan:**
+- Test Zurich BT1 + Car Scanner / OBD Fusion for Mode 06 capability on multiple vehicles
+- Confirm whether Dragy exposes Mode 06 when it arrives
+- Investigate FORScan (Ford/Mazda), Techstream (Toyota), ISTA (BMW) for Mode 06 exports
+- ESP32 + raw CAN is the likely path to reliable Mode 06 at scale — bypasses ELM327 limitations
+- If a third-party app on the Zurich BT1 can pull Mode 06, that's the lowest-effort path
+
+The only sources for Mode 06 data today are live capture via compatible hardware or proprietary scan tool exports. Once any path is confirmed working, it becomes an optional enrichment layer that upgrades scoring quality without being a dependency.
 
 ---
 

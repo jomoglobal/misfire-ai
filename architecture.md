@@ -25,11 +25,11 @@ flowchart LR
     subgraph C2["  ② ENRICH"]
         direction TB
         vin("🪪 decode_vin\nNHTSA API"):::enrich
-        m06("📊 fetch_mode06\nMargin Scoring"):::enrich
+        trend("📊 score_health\nFuel Trim Trending\nBaseline Deviation"):::enrich
         tsb("📋 lookup_tsb\nTSBs · Recalls"):::enrich
         rag("🧠 RAG\nHistorical Sessions\nVector Store"):::enrich
         n8n("🔀 n8n\nOrchestration"):::enrich
-        vin & m06 & tsb & rag --> n8n
+        vin & trend & tsb & rag --> n8n
     end
 
     subgraph C3["  ③ SEPARATE"]
@@ -55,7 +55,7 @@ flowchart LR
         trace("Every tool call · Approval gate · Anomaly classifications"):::obs
     end
 
-    norm --> vin & m06 & tsb & rag
+    norm --> vin & trend & tsb & rag
     n8n --> anom & score
     anom & score --> report & dash & brief
 
@@ -76,7 +76,7 @@ All ingestion sources normalize to the same structure before enrichment:
   "vehicle_id":  "string  — VIN or assigned ID",
   "session_id":  "string  — unique per run",
   "timestamp":   "ISO 8601",
-  "source":      "elm327 | car_scanner | mhd | techstream | esp32 | sample",
+  "source":      "elm327 | car_scanner | mhd | techstream | esp32 | dragy | sample",
   "pids": [
     { "pid": "0x0C", "name": "RPM", "value": 1423.5, "unit": "rpm", "raw_hex": "1640" }
   ],
@@ -93,12 +93,16 @@ All ingestion sources normalize to the same structure before enrichment:
 }
 ```
 
+> `mode06` is optional — present only when the hardware and vehicle support it. See [Predictive Health Scoring](#predictive-health-scoring) for how scoring works with and without it.
+
 ---
 
-## Mode 06 Health Score
+## Predictive Health Scoring
 
-Standard scan tools report pass/fail. MisfireAI captures the **margin** — the continuous score the vehicle is already computing internally. A catalyst at 91% of its minimum threshold is not the same as one at 60%. Both "pass." Only one is a week from a DTC.
+MisfireAI uses **three scoring methods** in priority order depending on available data. All three produce a 0–1 health score per system — the approach adapts to what the hardware can provide.
 
+### Method 1 — Mode 06 Margin Scoring *(best, hardware-dependent)*
+When Mode 06 data is available, the vehicle's own internal thresholds are used directly:
 ```
 margin = (measured − min) / (max − min)   →   0.0 – 1.0
 
@@ -106,6 +110,20 @@ margin = (measured − min) / (max − min)   →   0.0 – 1.0
   0.10 – 0.25  ████████░░  Warning   — near threshold, predictive signal
   0.25 – 0.75  ████░░░░░░  Normal
   0.75 – 1.00  ██░░░░░░░░  Healthy
+```
+A catalyst at 91% of its minimum threshold looks fine to a standard scanner. MisfireAI flags it. **Requires hardware that can pull Mode 06** — not all adapters or vehicles support this reliably. Under active research (see Hardware section).
+
+### Method 2 — Fuel Trim Trending Across Sessions *(core method, works on any hardware)*
+LTFT creeping from +3% → +7% → +11% across 20 sessions is a leading indicator weeks before a DTC. No special hardware required — Mode 01 PIDs only. This is the primary predictive method for Part 1.
+```
+trend_score = 1 − (current_ltft / saturation_limit)
+drift_rate  = slope of LTFT over last N sessions
+```
+
+### Method 3 — Statistical Baseline Deviation *(fallback, first-session capable)*
+Compare current session readings to the vehicle's personal baseline. Coolant temp running 8°C cooler than 30-session average at matching RPM/ambient → thermostat degrading. Works from session one using population statistics.
+```
+deviation_score = 1 − (|current − baseline_mean| / baseline_std)
 ```
 
 ---
@@ -121,12 +139,33 @@ margin = (measured − min) / (max − min)   →   0.0 – 1.0
 
 ---
 
+## Hardware Inventory
+
+Tested and documented hardware for live data capture. Goal: build a replicable stack using cheap, off-the-shelf components so anyone can run MisfireAI affordably.
+
+| Device | Type | Protocol | Status | Mode 06 | Notes |
+|---|---|---|---|---|---|
+| **BMW K+DCAN Cable** | Hard cable | K-Line / D-CAN | ✅ Tested | ✅ Possible | BMW-specific; works with INPA, NCS Expert, ISTA |
+| **Mini VCI Cable + Techstream** | Hard cable | Toyota CAN / K-Line | ✅ Tested | ✅ Possible | Toyota/Lexus-specific; Techstream exposes deep manufacturer data |
+| **MHD Orange Dongle** | Wireless | BMW-proprietary CAN | ✅ Tested | ✅ Yes | BMW N54/N55/S55/B58; high-frequency logging; primary data source |
+| **Zurich BT1 (Harbor Freight)** | Bluetooth | ELM327 / OBD2 | ✅ Tested | ⚠️ Limited | Generic OBD2; works with Car Scanner and python-obd; Mode 06 reliability varies by vehicle |
+| **Dragy OBD2 Logger** | Bluetooth | High-freq OBD2 | 🔜 Arriving | ❓ TBD | 10–50 Hz logging; testing pending; Mode 06 capability to be confirmed |
+| **ESP32 + CAN Transceiver** | DIY hardware | Raw CAN bus | 🔬 Research | ✅ Possible | Target for affordable replicable build; direct CAN access bypasses ELM327 limitations |
+
+### Hardware Research Goals
+- **Mode 06 via Zurich BT1:** Test whether reliable Mode 06 pulls are achievable with ELM327-based adapters on different vehicles
+- **Dragy Mode 06:** Confirm whether Dragy exposes Mode 06 or Mode 01 only
+- **Third-party apps + Zurich BT1:** Evaluate Car Scanner, Torque Pro, OBD Fusion for Mode 06 support with the BT1 dongle
+- **ESP32 target build:** Cheap components (~$15–25 total) that can pull raw CAN + Mode 06; replicable by anyone
+
+---
+
 ## Failure Modes & Fallbacks
 
 | Failure | Fallback |
 |---|---|
-| ELM327 connection loss | Prompt for log file ingestion |
-| Mode 06 data unavailable | Statistical deviation from session baseline |
+| Hardware connection loss | Prompt for log file ingestion |
+| Mode 06 unavailable (adapter or vehicle limitation) | Fall back to fuel trim trending (Method 2) or baseline deviation (Method 3) |
 | VIN decode fails | Generic Mode 01 thresholds — flagged in output |
 | TSB lookup returns nothing | Analysis continues — absence noted in report |
 | No historical sessions | First-run baseline established from current session |
@@ -141,7 +180,7 @@ margin = (measured − min) / (max − min)   →   0.0 – 1.0
 |---|---|
 | LLM latency in Enrich | Batch per session, not per reading |
 | Vector store growth | Session-level embeddings only — not reading-level |
-| Sparse Mode 06 data | Partial scoring valid — missing monitors noted, not blocking |
+| Mode 06 hardware dependency | Three-method scoring stack — pipeline never blocks on Mode 06 absence |
 | Multi-vehicle isolation | Each `vehicle_id` maintains its own baseline |
 
 ---
