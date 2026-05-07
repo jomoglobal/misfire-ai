@@ -13,7 +13,7 @@ The vehicle's OBD2 system continuously produces a stream of parametric data (PID
 
 ## Why This Signal
 
-1. **Domain depth.** Four years of hands-on automotive work means the signal is well-understood at the source — what the readings mean, what patterns precede failures, where standard tools fall short. This isn't a signal chosen for convenience; it's a domain with genuine expertise behind it.
+1. **Domain depth.** This signal is built on a foundation most developers don't have: an automotive degree, ASE certification, prior shop ownership, and years of hands-on diagnostic work. The difference between a lean condition at idle and a lean condition under boost load, what a timing retard pattern actually means, why a charge pipe failure looks identical to an injector fault in raw trim data — that's not research, that's recalled experience. This isn't a signal chosen for convenience; it's a domain with deep, firsthand expertise behind every design decision.
 
 2. **Rich, continuous, and underutilized.** Every 1996+ US vehicle generates Mode 01 PID data universally. Mode 06 adds continuous pass/fail margin data that standard scan tools collapse to a binary. The signal is already there — it just isn't being read.
 
