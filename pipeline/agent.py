@@ -1,14 +1,13 @@
 """
 Diagnostic agent — core reasoning layer.
-Ported from obd2-vehicle-health-advisor/lib/agent.ts (TypeScript/OpenAI → Python/Claude).
-Uses Claude claude-sonnet-4-6 with Phoenix/OTel tracing.
+Uses GPT-4o with Phoenix/OTel tracing.
 """
 
 import json
 import os
 from dataclasses import dataclass, field
 
-import anthropic
+from openai import OpenAI
 from opentelemetry import trace
 
 from pipeline.vehicles import VehicleConfig, get_vehicle_by_id
@@ -65,7 +64,6 @@ def _build_system_prompt(vehicle: VehicleConfig) -> str:
             + "\n".join(f"- {p}" for p in vehicle.inaccessible_pids)
         )
 
-    # Load system prompt v2 from prompts/
     prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "system_prompt_v2.txt")
     try:
         with open(prompt_path) as f:
@@ -94,7 +92,7 @@ def run_diagnostic_agent(input: AgentInput) -> AgentOutput:
 
     preprocessed = preprocess_snapshot(input.snapshot)
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
     with tracer.start_as_current_span("misfire.diagnostic") as span:
         span.set_attribute("vehicle.id", input.vehicle_id)
@@ -117,16 +115,17 @@ def run_diagnostic_agent(input: AgentInput) -> AgentOutput:
             f"{warnings_block}"
         )
 
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
+        response = client.chat.completions.create(
+            model="gpt-4o",
             max_tokens=1024,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_message},
+            ],
         )
 
-        assessment = message.content[0].text if message.content else "(no response)"
+        assessment = response.choices[0].message.content or "(no response)"
 
-        # Extract urgency tier from response
         urgency = "UNKNOWN"
         for tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NORMAL"]:
             if tier in assessment.upper():
