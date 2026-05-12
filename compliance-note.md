@@ -36,8 +36,17 @@ Paying customers are given a clear choice at onboarding:
 
 Opting in is framed as a benefit, not a requirement. Opting out has no impact on paid feature access.
 
+### Diagnostic Context Data — Collected Where Available
+Certain environmental signals are collected because they directly affect diagnostic interpretation:
+
+- **Elevation / altitude** — barometric pressure drops ~1.2 kPa per 100m; an engine at 5,000 ft reads lean relative to sea level. Elevation is required to contextualize fuel trim and MAF data correctly.
+- **Barometric pressure** — same reason; available as a Mode 01 PID (0x33) on most vehicles
+- **Ambient temperature** — affects IAT, cold-start enrichment duration, and coolant warm-up baseline
+
+These are treated as diagnostic signals, not location data. Elevation (a single number in meters) is not equivalent to GPS coordinates and does not reveal routes, destinations, or identity.
+
 ### What Is Never Collected (Regardless of Tier)
-- GPS coordinates or precise location
+- GPS coordinates, routes, or precise location
 - Owner name, contact information, or identity
 - Financial information
 - Raw VIN (always hashed before leaving the device)
