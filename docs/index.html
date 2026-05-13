@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MisfireAI — Deeper Diagnostics, Plain Language</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --blue:      #4a9eff;
+      --green:     #3dba6f;
+      --orange:    #f5a623;
+      --purple:    #e040fb;
+      --red:       #ff4444;
+      --text:      #e8e8e8;
+      --muted:     #8b949e;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(13,17,23,0.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--blue);
+      text-decoration: none;
+      letter-spacing: -0.3px;
+    }
+    .nav-links { display: flex; gap: 28px; }
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      background: var(--blue);
+      color: #0d1117 !important;
+      padding: 7px 18px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px !important;
+      transition: opacity 0.2s !important;
+    }
+    .nav-cta:hover { opacity: 0.85; }
+
+    /* ── HERO ── */
+    .hero {
+      padding: 100px 32px 80px;
+      text-align: center;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(74,158,255,0.12);
+      border: 1px solid rgba(74,158,255,0.3);
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      padding: 5px 14px;
+      border-radius: 20px;
+      margin-bottom: 24px;
+    }
+    .hero h1 {
+      font-size: clamp(36px, 6vw, 58px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -1px;
+      margin-bottom: 20px;
+    }
+    .hero h1 span { color: var(--blue); }
+    .hero p {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 580px;
+      margin: 0 auto 36px;
+      line-height: 1.7;
+    }
+    .hero-buttons { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--blue);
+      color: #0d1117;
+      padding: 13px 28px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 15px;
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      padding: 13px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      transition: border-color 0.2s;
+    }
+    .btn-secondary:hover { border-color: var(--muted); }
+
+    /* ── SECTION WRAPPER ── */
+    section { padding: 80px 32px; }
+    .section-inner { max-width: 1000px; margin: 0 auto; }
+    .section-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(26px, 4vw, 36px);
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 14px;
+    }
+    .section-sub {
+      font-size: 16px;
+      color: var(--muted);
+      max-width: 560px;
+      line-height: 1.7;
+      margin-bottom: 48px;
+    }
+
+    /* ── PROBLEM ── */
+    .problem-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .problem-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 28px;
+    }
+    .problem-card .icon { font-size: 28px; margin-bottom: 14px; }
+    .problem-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+    .problem-card p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+    /* ── PIPELINE ── */
+    .pipeline { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .stages {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .stage {
+      background: var(--bg);
+      padding: 32px 24px;
+    }
+    .stage-num {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .stage h3 { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+    .stage p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+    .stage-1 .stage-num { color: var(--blue); }
+    .stage-2 .stage-num { color: var(--green); }
+    .stage-3 .stage-num { color: var(--orange); }
+    .stage-4 .stage-num { color: var(--purple); }
+    .stage-1 h3 { color: var(--blue); }
+    .stage-2 h3 { color: var(--green); }
+    .stage-3 h3 { color: var(--orange); }
+    .stage-4 h3 { color: var(--purple); }
+
+    /* ── FEATURES ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 28px;
+      transition: border-color 0.2s;
+    }
+    .feature-card:hover { border-color: var(--blue); }
+    .feature-icon { font-size: 26px; margin-bottom: 14px; }
+    .feature-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+    .feature-card p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+    /* ── HITL CALLOUT ── */
+    .hitl-callout {
+      background: rgba(255,68,68,0.06);
+      border: 1px solid rgba(255,68,68,0.25);
+      border-radius: 12px;
+      padding: 40px;
+      display: flex;
+      gap: 32px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .hitl-callout .hitl-icon { font-size: 40px; flex-shrink: 0; }
+    .hitl-callout h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; color: var(--red); }
+    .hitl-callout p { font-size: 14px; color: var(--muted); line-height: 1.7; max-width: 600px; }
+
+    /* ── VEHICLES ── */
+    .vehicles-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .vehicle-chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 7px 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .vehicle-chip span { color: var(--text); font-weight: 600; }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 32px;
+      text-align: center;
+    }
+    .footer-inner { max-width: 600px; margin: 0 auto; }
+    .footer-logo { font-size: 20px; font-weight: 800; color: var(--blue); margin-bottom: 10px; }
+    .footer-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+    .footer-links { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; margin-bottom: 24px; }
+    .footer-links a { font-size: 13px; color: var(--muted); text-decoration: none; }
+    .footer-links a:hover { color: var(--text); }
+    .footer-copy { font-size: 12px; color: #444; }
+
+    /* ── DIVIDER ── */
+    .divider { height: 1px; background: var(--border); max-width: 1000px; margin: 0 auto; }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <a href="#" class="nav-logo">MisfireAI</a>
+    <div class="nav-links">
+      <a href="#how-it-works">How It Works</a>
+      <a href="#features">Features</a>
+      <a href="#contact" class="nav-cta">Request Demo</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-badge">Open Source · IAI09 Capstone · Powered by Datronex</div>
+    <h1>Deeper diagnostics,<br><span>plain language.</span></h1>
+    <p>
+      Your vehicle generates rich sensor data on every drive. MisfireAI reads it,
+      scores it, and tells you what it means — before a warning light ever comes on.
+    </p>
+    <div class="hero-buttons">
+      <a href="https://github.com/jomoglobal/iai09-signal-harvester" target="_blank" class="btn-primary">View on GitHub</a>
+      <a href="#how-it-works" class="btn-secondary">See How It Works</a>
+    </div>
+  </div>
+
+  <!-- PROBLEM -->
+  <section id="problem">
+    <div class="section-inner">
+      <div class="section-label">The Problem</div>
+      <h2 class="section-title">Standard code readers tell you what broke.<br>MisfireAI tells you what's breaking.</h2>
+      <p class="section-sub">
+        OBD2 was designed for emissions monitoring, not predictive diagnostics.
+        Most tools surface fault codes after damage is done — leaving owners dependent
+        on mechanics with no way to verify the diagnosis.
+      </p>
+      <div class="problem-grid">
+        <div class="problem-card">
+          <div class="icon">🔌</div>
+          <h3>Rich data, no interpretation</h3>
+          <p>Every 1996+ vehicle continuously broadcasts dozens of live sensor readings. Most owners never see them, and tools that do show them offer no context.</p>
+        </div>
+        <div class="problem-card">
+          <div class="icon">⚠️</div>
+          <h3>Codes appear after the fact</h3>
+          <p>A fault code means the ECM already confirmed a problem. The sensor trends that led there — fuel trims creeping over weeks, catalyst efficiency declining — go unnoticed.</p>
+        </div>
+        <div class="problem-card">
+          <div class="icon">🔧</div>
+          <h3>No independent verification</h3>
+          <p>When a mechanic quotes a repair, there's no accessible tool for the average owner to verify the diagnosis against their own vehicle's data.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- PIPELINE -->
+  <section id="how-it-works" class="pipeline">
+    <div class="section-inner">
+      <div class="section-label">How It Works</div>
+      <h2 class="section-title">Four stages. One pipeline.</h2>
+      <p class="section-sub">
+        MisfireAI follows a structured signal pipeline — from raw OBD2 data to
+        a plain-language diagnostic assessment with human approval at every high-stakes step.
+      </p>
+      <div class="stages">
+        <div class="stage stage-1">
+          <div class="stage-num">① Catch</div>
+          <h3>Ingest</h3>
+          <p>Parse OBD2 log files from any source — Car Scanner, MHD, Techstream, or raw CSV. Normalize to a common PID schema regardless of format.</p>
+        </div>
+        <div class="stage stage-2">
+          <div class="stage-num">② Enrich</div>
+          <h3>Contextualize</h3>
+          <p>Decode the VIN via NHTSA to identify the exact vehicle. Look up open recalls and complaints. Add vehicle-specific context before analysis.</p>
+        </div>
+        <div class="stage stage-3">
+          <div class="stage-num">③ Separate</div>
+          <h3>Score</h3>
+          <p>Score each vehicle system — fueling, cooling, ignition, catalyst — on a 0–1 scale. Separate sustained anomalies from transient noise using four severity tiers.</p>
+        </div>
+        <div class="stage stage-4">
+          <div class="stage-num">④ Compound</div>
+          <h3>Advise</h3>
+          <p>GPT-4o generates a plain-language diagnostic assessment. High-stakes repair briefs require explicit owner approval before any action is taken.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HITL -->
+  <section id="hitl">
+    <div class="section-inner">
+      <div class="hitl-callout">
+        <div class="hitl-icon">👤</div>
+        <div>
+          <h3>Human approval on every repair brief</h3>
+          <p>
+            When the pipeline flags a high-severity finding, it doesn't act automatically.
+            The vehicle owner receives an email with the full assessment, system health scores,
+            and any active fault codes. They approve or reject. The decision — and its timestamp —
+            is logged regardless of outcome. No repair recommendation is forwarded or stored
+            without an explicit owner action on record.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="section-inner">
+      <div class="section-label">Features</div>
+      <h2 class="section-title">Built for real vehicles, real data.</h2>
+      <p class="section-sub">Works on any 1996+ US vehicle with a standard OBD2 port.</p>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🩺</div>
+          <h3>Per-system health scoring</h3>
+          <p>Fueling, cooling, ignition, and catalyst each scored 0–1. See exactly which system is degrading and how far it's drifted from normal.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔍</div>
+          <h3>Signal vs. noise separation</h3>
+          <p>Four-tier anomaly classification separates a single transient spike from a sustained pattern developing across a drive cycle.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🪪</div>
+          <h3>VIN-aware analysis</h3>
+          <p>Vehicle identity decoded via NHTSA. Open recalls and complaints checked automatically. Analysis adapts to the specific make, model, and engine.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Full observability</h3>
+          <p>Every pipeline stage traced in Phoenix/Arize. Every tool call, every score, every approval decision logged with timestamps and attributes.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔌</div>
+          <h3>Multi-source ingestion</h3>
+          <p>Accepts log files from Car Scanner, MHD, Toyota Techstream, carOBD, and generic CSV formats. Auto-detects source format and normalizes column names.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📦</div>
+          <h3>Portable open-source stack</h3>
+          <p>Clone the repo, add your API keys, run the pipeline. Sample data included. No proprietary infrastructure required to get started.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- VEHICLES TESTED -->
+  <section id="vehicles">
+    <div class="section-inner">
+      <div class="section-label">Tested Vehicles</div>
+      <h2 class="section-title">Real data from real vehicles.</h2>
+      <p class="section-sub" style="margin-bottom: 28px;">
+        Pipeline validated against log files from multiple makes, models, and engine types.
+      </p>
+      <div class="vehicles-row">
+        <div class="vehicle-chip"><span>2009 BMW 335i</span> — N54 twin-turbo</div>
+        <div class="vehicle-chip"><span>2007 Toyota Tundra</span> — 5.7L 3UR-FE</div>
+        <div class="vehicle-chip"><span>2015 Honda Fit</span> — 1.5L L15B7</div>
+        <div class="vehicle-chip"><span>Toyota Etios 2014</span> — 1.5L 2NR-FE</div>
+        <div class="vehicle-chip"><span>KIA Soul</span> — 1.6L G4FD</div>
+        <div class="vehicle-chip"><span>Multi-make Brazil fleet</span> — cephasax dataset</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACT -->
+  <section id="contact" style="background: var(--surface); border-top: 1px solid var(--border);">
+    <div class="section-inner" style="text-align: center;">
+      <div class="section-label">Get In Touch</div>
+      <h2 class="section-title">Request a demo or ask a question.</h2>
+      <p class="section-sub" style="margin: 0 auto 32px;">
+        Interested in MisfireAI for your vehicle, fleet, or shop?
+        Reach out directly.
+      </p>
+      <a href="mailto:misfire@datronex.net" class="btn-primary" style="font-size: 16px; padding: 15px 36px;">
+        misfire@datronex.net
+      </a>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-logo">MisfireAI</div>
+      <div class="footer-sub">Powered by Datronex · IAI09 Capstone · May 2026</div>
+      <div class="footer-links">
+        <a href="https://github.com/jomoglobal/iai09-signal-harvester" target="_blank">GitHub</a>
+        <a href="mailto:misfire@datronex.net">Contact</a>
+        <a href="#how-it-works">How It Works</a>
+        <a href="#features">Features</a>
+      </div>
+      <div class="footer-copy">© 2026 Datronex. Built with Claude Code.</div>
+    </div>
+  </footer>
+
+</body>
+</html>

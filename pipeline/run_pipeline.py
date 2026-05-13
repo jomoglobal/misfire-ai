@@ -83,7 +83,7 @@ def _setup_tracing(project_name: str) -> trace.Tracer:
     return trace.get_tracer("misfire-ai-pipeline")
 
 
-def run(file_path: str, vin: str, dry_run: bool, project_name: str) -> None:
+def run(file_path: str, vin: str, recipient_email: str, dry_run: bool, project_name: str) -> None:
     from tools.mcp_server import ingest_file, decode_vin, lookup_tsb, score_vehicle_health
 
     tracer = _setup_tracing(project_name)
@@ -211,7 +211,7 @@ def run(file_path: str, vin: str, dry_run: bool, project_name: str) -> None:
             span.set_attribute("tool", "run_diagnostic_agent")
 
             if dry_run:
-                print("   ℹ  [dry-run] Skipping agent call — no Anthropic API call made")
+                print("   ℹ  [dry-run] Skipping agent call — no OpenAI API call made")
                 span.set_attribute("compound.skipped", True)
             elif not os.getenv("OPENAI_API_KEY"):
                 print("   ⚠  OPENAI_API_KEY not set — skipping agent call")
@@ -246,6 +246,31 @@ def run(file_path: str, vin: str, dry_run: bool, project_name: str) -> None:
                 if output.warnings:
                     print(f"\nPreprocessor warnings: {output.warnings}")
 
+                # ── HITL GATE ─────────────────────────────────────────────
+                if recipient_email and output.urgency in ("CRITICAL", "HIGH", "MEDIUM"):
+                    from tools.hitl import RepairBrief, send_approval_request
+
+                    brief = RepairBrief(
+                        vehicle_make=vehicle_meta.get("make", "Unknown"),
+                        vehicle_model=vehicle_meta.get("model", "Unknown"),
+                        vehicle_year=vehicle_meta.get("year", ""),
+                        session_id=f"pipeline_run:{Path(file_path).stem}",
+                        urgency=output.urgency,
+                        overall_score=overall,
+                        system_scores=scores.get("systems", {}),
+                        dtcs=snapshot.get("dtcs", []),
+                        assessment=output.assessment,
+                        recipient_email=recipient_email,
+                    )
+
+                    print(f"\n▶  HITL — sending repair brief to {recipient_email}")
+                    hitl_result = send_approval_request(brief)
+                    span.set_attribute("hitl.decision",    hitl_result["decision"])
+                    span.set_attribute("hitl.decided_at",  hitl_result.get("decided_at") or "")
+                    span.set_attribute("hitl.token",       hitl_result["token"])
+                elif recipient_email:
+                    print(f"\n   ℹ  Urgency={output.urgency} — HITL gate not triggered (LOW/NORMAL only)")
+
         root_span.set_attribute("pipeline.complete", True)
 
     print(f"\n{'='*60}")
@@ -257,6 +282,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="MisfireAI pipeline runner")
     parser.add_argument("--file",    default=str(DEFAULT_FILE), help="Path to log file")
     parser.add_argument("--vin",     default=DEFAULT_VIN,       help="17-char VIN (optional)")
+    parser.add_argument("--email",   default="",                help="Owner email for HITL approval")
     parser.add_argument("--dry-run", action="store_true",       help="Skip API calls, emit traces only")
     parser.add_argument("--project", default="MisfireAI",       help="Phoenix project name")
     args = parser.parse_args()
@@ -264,6 +290,7 @@ def main() -> None:
     run(
         file_path=args.file,
         vin=args.vin,
+        recipient_email=args.email,
         dry_run=args.dry_run,
         project_name=args.project,
     )
