@@ -2,19 +2,9 @@
 
 > AI-powered OBD2 diagnostic pipeline — catches developing vehicle issues before fault codes are set.
 
-Standard scan tools surface fault codes after a problem is already confirmed. MisfireAI catches what's developing — correlating PIDs, scoring Mode 06 monitor margins, and building a health baseline across sessions — weeks before a DTC is ever set.
+**[misfire.datronex.net](https://misfire.datronex.net)** · Built by [Datronex](https://datronex.net) · IAI09 Capstone · May 2026
 
----
-
-## ⚠️ Status: In Development
-
-This project is actively being built. Core pipeline architecture and eval harness are in place. Full end-to-end pipeline and UI are in progress.
-
----
-
-## What It Does
-
-Most vehicles generate rich diagnostic data every time they run. Most owners never see it. MisfireAI reads that data, scores it against the vehicle's own internal thresholds, and surfaces findings in plain language — before a warning light, before a shop visit, before it becomes expensive.
+Standard scan tools surface fault codes after a problem is already confirmed. MisfireAI catches what's developing — correlating live sensor data across multiple systems, scoring vehicle health, and producing a plain-language diagnostic assessment — weeks before a DTC is ever set.
 
 ---
 
@@ -26,64 +16,130 @@ CATCH → ENRICH → SEPARATE → COMPOUND
 
 | Stage | What Happens |
 |---|---|
-| **Catch** | Ingest from any supported source → normalize to common schema |
-| **Enrich** | VIN decode, Mode 06 margin scoring, TSB/recall lookup, historical session comparison via RAG |
-| **Separate** | 4-tier severity classification, per-system health scoring (0–1) |
-| **Compound** | Plain-language session report, health dashboard, repair brief (owner approval required) |
-
----
-
-## Supported Data Sources
-
-- ELM327 adapter (Bluetooth/WiFi — live connection)
-- Car Scanner app log export
-- MHD (BMW flash/logging)
-- Techstream (Toyota-specific)
-- ESP32 CAN logger
-- Sample data included — pipeline runs without hardware
-
----
-
-## Key Features
-
-- **Mode 06 predictive scoring** — captures the margin between a passing monitor and its threshold. A catalyst at 92% of its limit looks fine to a standard scanner. MisfireAI flags it.
-- **Multi-source ingestion** — normalizes data from any supported format into a common schema
-- **Historical baseline** — vehicle health accumulates across sessions; patterns that develop over weeks are visible
-- **TSB & recall awareness** — findings cross-referenced against technical service bulletins and active recalls
-- **Human-in-the-loop** — repair briefs require owner review and approval before anything is logged or shared
+| **① Catch** | Parse OBD2 log file → normalize all columns to a common PID schema regardless of source format |
+| **② Enrich** | Decode VIN via NHTSA API → look up open recalls and complaints → add vehicle-specific context |
+| **③ Separate** | Score each vehicle system (fueling, cooling, ignition, catalyst) 0–1 → separate sustained anomalies from noise |
+| **④ Compound** | GPT-4o generates plain-language diagnostic assessment → HITL gate sends repair brief to owner for approval |
 
 ---
 
 ## Quickstart
 
-> Sample OBD2 data is in `data/sample/`. No adapter required.
+Sample OBD2 data is included in `data/sample/` — no adapter or hardware required to run the pipeline.
 
 ```bash
 git clone https://github.com/jomoglobal/misfire-ai
 cd misfire-ai
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # add your ANTHROPIC_API_KEY
+cp .env .env.bak   # back up, then fill in your keys
+```
+
+**Minimum keys to run the full pipeline:**
+- `OPENAI_API_KEY` — GPT-4o diagnostic agent
+- `PHOENIX_API_KEY_PERSONAL` + `PHOENIX_COLLECTOR_ENDPOINT_PERSONAL` — trace logging
+- `SENDGRID_API_KEY` + `HITL_FROM_EMAIL` — only needed if using `--email` for HITL approval
+
+**Run with sample data (no VIN, no email):**
+```bash
+python3 pipeline/run_pipeline.py
+```
+
+**Run with a real file and VIN:**
+```bash
+python3 pipeline/run_pipeline.py \
+  --file "data/sample/2009-BMW-335i-2026-04-15 13-15-01.csv" \
+  --vin WBAPN73579A395571
+```
+
+**Run with HITL approval email:**
+```bash
+python3 pipeline/run_pipeline.py \
+  --file data/external/carOBD/obdiidata/drive1.csv \
+  --vin 5TBRU54127S451393 \
+  --email you@example.com
+```
+
+**Dry run (no API calls, traces only):**
+```bash
+python3 pipeline/run_pipeline.py --dry-run
 ```
 
 ---
 
-## Eval Harness
+## CLI Arguments
 
-Built on the eval framework from the prior proof-of-concept. Three eval suites covering sensor validity, diagnosis accuracy, and urgency calibration. LLM-as-judge scoring with Phoenix/Arize tracing.
+| Argument | Default | Description |
+|---|---|---|
+| `--file` | `data/external/carOBD/obdiidata/drive1.csv` | Path to OBD2 log file |
+| `--vin` | *(none)* | 17-character VIN — enables decode_vin + lookup_tsb |
+| `--email` | *(none)* | Owner email — triggers HITL approval gate for HIGH/MEDIUM/CRITICAL findings |
+| `--dry-run` | false | Skip all API calls, emit traces with synthetic data |
+| `--project` | `MisfireAI` | Phoenix project name for this run |
 
+---
+
+## Supported Data Sources
+
+The pipeline auto-detects source format and maps column names to a common schema.
+
+| Source | Format | Notes |
+|---|---|---|
+| carOBD (eron93br) | CSV, uppercase cols | Toyota Etios, 304k rows, included in `data/external/` |
+| Car Scanner app | CSV, verbose English headers with units | BMW 335i, Honda Fit logs in `data/sample/` |
+| cephasax OBD-II | CSV, semicolon delimiter | Multi-make Brazil fleet, real DTC codes |
+| Isay Gerard OBD-II | CSV, Spanish headers | KIA Soul, 1.1M rows, O2 sensors + catalyst temp |
+| Generic CSV | Any | Unknown columns passed through as-is |
+
+---
+
+## MCP Tools
+
+Four atomic tools exposed via FastMCP — each does one thing:
+
+| Tool | What It Does |
+|---|---|
+| `ingest_file` | Parse a log file → normalized PID snapshot with per-PID stats |
+| `decode_vin` | 17-char VIN → make/model/year/engine via NHTSA vPIC API |
+| `lookup_tsb` | VIN + symptom → open recalls and complaints via NHTSA |
+| `score_vehicle_health` | PID snapshot → 0–1 health score per system with plain-language summary |
+
+Run the MCP server standalone:
 ```bash
-# Run all evals
-python evals/run_evals.py
-
-# Single scenario
-python evals/run_evals.py --scenario diagnosis_accuracy
-
-# Dry run (no API calls)
-python evals/run_evals.py --dry-run
+python3 -m tools.mcp_server
 ```
 
-See [docs/judge-validation.md](docs/judge-validation.md) for scoring methodology and threshold rationale.
+---
+
+## HITL Approval Gate
+
+When the pipeline flags a HIGH, MEDIUM, or CRITICAL finding and `--email` is provided:
+
+1. A repair brief is assembled — vehicle, system scores, assessment, urgency
+2. An HTML email is sent from `misfire@datronex.net` via SendGrid with **Approve** and **Reject** buttons
+3. A local callback server starts on port 8741 and waits for the owner's click
+4. The decision (approved / rejected / timeout) is logged with a UTC timestamp as a Phoenix span attribute
+
+No repair brief is forwarded or stored without an explicit owner action on record.
+
+---
+
+## Tracing
+
+Every pipeline run emits OpenTelemetry traces to Phoenix/Arize. Each stage is a separate span:
+
+```
+misfire.pipeline
+  ├── misfire.catch.ingest_file
+  ├── misfire.enrich
+  │   ├── misfire.enrich.decode_vin
+  │   └── misfire.enrich.lookup_tsb
+  ├── misfire.separate.score_vehicle_health
+  └── misfire.compound.agent
+        └── misfire.hitl.send_brief  (if triggered)
+```
+
+Traces go to both the personal Phoenix account and the instructor (Sravan/Euler) account simultaneously via dual provider configuration.
 
 ---
 
@@ -91,39 +147,52 @@ See [docs/judge-validation.md](docs/judge-validation.md) for scoring methodology
 
 ```
 ├── pipeline/
-│   ├── agent.py           # Diagnostic reasoning — Claude claude-sonnet-4-6 + Phoenix tracing
+│   ├── run_pipeline.py    # End-to-end runner — entry point
+│   ├── agent.py           # GPT-4o diagnostic agent + OTel tracing
 │   ├── preprocessor.py    # Snapshot validation, normalization, artifact detection
-│   └── vehicles.py        # Vehicle config registry (BMW 335i, Tundra, Honda Fit + more)
-├── tools/                 # MCP server tool endpoints (in progress)
+│   └── vehicles.py        # Vehicle config registry (BMW 335i, Tundra, Honda Fit)
+├── tools/
+│   ├── mcp_server.py      # 4 atomic MCP tools via FastMCP
+│   └── hitl.py            # HITL approval gate — SendGrid email + FastAPI callback
 ├── evals/
 │   ├── run_evals.py       # Synthetic eval runner — LLM-as-judge, Phoenix traces
 │   ├── sensor_validity.py
 │   ├── diagnosis_accuracy.py
-│   ├── urgency_calibration.py
-│   └── results/           # Per-run JSON results
-├── data/sample/           # Real OBD2 logs (BMW 335i, Honda Fit, Tundra) + synthetic dataset
-├── prompts/               # System prompt versions (v1, v2)
+│   └── urgency_calibration.py
+├── data/
+│   ├── sample/            # Real OBD2 logs (BMW 335i, Honda Fit, Tundra) — committed to repo
+│   └── external/          # Downloaded datasets — gitignored, too large for repo
+├── prompts/
+│   ├── system_prompt_v1.txt
+│   └── system_prompt_v2.txt
 ├── docs/
-│   ├── judge-validation.md   # LLM judge calibration results
-│   └── monitoring-plan.md    # Eval cadence, PID recommendations per vehicle
-├── product-brief.md
+│   ├── index.html         # Landing page — misfire.datronex.net
+│   ├── architecture.excalidraw
+│   ├── dataset-research.md
+│   ├── lessons-learned.md
+│   ├── judge-validation.md
+│   └── monitoring-plan.md
 ├── architecture.md
-├── context.md
-└── signal-decision.md
+├── compliance-note.md
+├── signal-decision.md
+├── product-brief.md
+└── .env                   # All credentials — gitignored
 ```
 
 ---
 
 ## Vehicles Tested
 
-| ID | Vehicle | Engine | Notes |
-|---|---|---|---|
-| `bmw-335i-2009` | 2009 BMW 335i | 3.0L N54 Twin-Turbo | 477 real MHD sessions · E40 flex fuel |
-| `tundra-2007` | 2007 Toyota Tundra | 4.0L 1GR-FE V6 | ELM327 + Car Scanner data |
-| `honda-fit-2015` | 2015 Honda Fit | 1.5L L15B7 i4 | Car Scanner data |
+| Vehicle | Engine | Data Source |
+|---|---|---|
+| 2009 BMW 335i | 3.0L N54 Twin-Turbo | Car Scanner app export |
+| 2007 Toyota Tundra | 5.7L 3UR-FE V8 | ELM327 + Car Scanner |
+| 2015 Honda Fit | 1.5L L15B7 | Car Scanner app export |
+| Toyota Etios 2014 | 1.5L 2NR-FE | carOBD public dataset |
+| KIA Soul | 1.6L G4FD | Isay Gerard public dataset |
 
 ---
 
 ## Prior Work
 
-The eval harness, vehicle configs, system prompts, and sample data are evolved from a prior proof-of-concept ([obd2-vehicle-health-advisor](https://github.com/jomoglobal/obd2-vehicle-health-advisor)) built with Next.js, TypeScript, and GPT-4o. MisfireAI is a full rewrite in Python using Claude, with a multi-source ingestion layer, Mode 06 predictive scoring, and a production pipeline architecture.
+The eval harness, vehicle configs, system prompts, and sample data evolved from a prior proof-of-concept ([obd2-vehicle-health-advisor](https://github.com/jomoglobal/obd2-vehicle-health-advisor)) built with Next.js, TypeScript, and GPT-4o. MisfireAI is a full Python rewrite with multi-source ingestion, MCP tools, and a production pipeline architecture.

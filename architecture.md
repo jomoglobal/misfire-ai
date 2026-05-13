@@ -194,3 +194,46 @@ Tested and documented hardware for live data capture. Goal: build a replicable s
 | Repair brief | High | No | **Owner approval required** |
 | DTC clear (Mode 04) | High | No | **Blocked — out of scope** |
 | Third-party data share | High | No | **Blocked — out of scope** |
+
+---
+
+## HITL Approval Flow — Implementation
+
+When the agent produces a HIGH, MEDIUM, or CRITICAL urgency assessment and an owner email is provided, the pipeline halts and triggers the approval gate:
+
+```
+Agent output
+    ↓
+RepairBrief assembled
+  (vehicle, system scores, DTCs, assessment, urgency)
+    ↓
+SendGrid → HTML email → owner inbox
+  (misfire@datronex.net → owner email)
+    ↓
+Owner clicks Approve or Reject
+    ↓
+FastAPI callback server (localhost:8741)
+  /hitl/approve?token=  or  /hitl/reject?token=
+    ↓
+Decision + UTC timestamp logged
+  → Phoenix span attribute: hitl.decision, hitl.decided_at, hitl.token
+    ↓
+Pipeline resumes (or times out after 120s)
+```
+
+**Approval email contents:**
+- Vehicle year / make / model
+- Urgency badge (CRITICAL / HIGH / MEDIUM)
+- Per-system health scores table with color coding
+- Active DTCs (if any)
+- Agent assessment (first 600 chars)
+- Approve and Reject buttons (tokenized, single-use)
+
+**Approval channels — status:**
+| Channel | Status | Notes |
+|---|---|---|
+| Email (SendGrid) | ✅ Live | misfire@datronex.net → owner Gmail |
+| Telegram | 🔜 Planned | Bot message with inline buttons — Part 2 |
+| Slack | 🔜 Future | Channel message with interactive actions |
+
+**Token security:** Each approval request generates a `secrets.token_urlsafe(24)` token stored in memory for the lifetime of the request. Tokens are single-use and expire on decision or timeout.

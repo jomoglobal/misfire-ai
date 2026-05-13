@@ -69,13 +69,15 @@ The pipeline produces outputs at four severity levels. Only high-stakes, irrever
 | Writing to vehicle ECU | High | No | **Blocked — outside technical scope** |
 
 ### Approval Flow — Repair Brief
-When the agent generates a repair brief, the pipeline halts and delivers the brief to the owner via one of three channels (configurable):
+When the agent generates a repair brief, the pipeline halts and delivers the brief to the owner for review. The owner receives: vehicle identity, urgency tier, per-system health scores, any active DTCs, and the agent's plain-language assessment. They approve or reject. The decision — and the timestamp — is logged regardless of outcome. No repair brief is acted upon, forwarded, or stored in any shared system without an explicit approval event on record.
 
-- **Email** — brief delivered with approve / reject links
-- **Telegram** — bot message with inline approve / reject buttons
-- **Slack** — channel message with interactive approve / reject actions
+**Approval channels:**
 
-The owner reviews: vehicle, flagged systems, health scores, recommended action, and estimated urgency tier. They approve or reject. The decision — and the timestamp — is logged regardless of outcome. No repair brief is acted upon, forwarded, or stored in any shared system without an explicit approval event on record.
+| Channel | Status | Notes |
+|---|---|---|
+| **Email** | ✅ Live | Sent from misfire@datronex.net via SendGrid. Dark-theme HTML email with Approve / Reject buttons. Callback server on port 8741 captures the decision. |
+| **Telegram** | 🔜 Planned | Bot message with inline Approve / Reject buttons. Planned for Part 2. |
+| **Slack** | 🔜 Future | Channel message with interactive actions. |
 
 ---
 
