@@ -49,6 +49,15 @@
       color: var(--blue);
       text-decoration: none;
       letter-spacing: -0.3px;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+    }
+    .nav-logo-sub {
+      font-size: 10px;
+      font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 0.5px;
     }
     .nav-links { display: flex; gap: 28px; }
     .nav-links a {
@@ -274,7 +283,7 @@
 
   <!-- NAV -->
   <nav>
-    <a href="#" class="nav-logo">MisfireAI</a>
+    <a href="#" class="nav-logo">MisfireAI <span class="nav-logo-sub">by Datronex</span></a>
     <div class="nav-links">
       <a href="#how-it-works">How It Works</a>
       <a href="#features">Features</a>
@@ -284,14 +293,14 @@
 
   <!-- HERO -->
   <div class="hero">
-    <div class="hero-badge">Open Source · IAI09 Capstone · Powered by Datronex</div>
+    <div class="hero-badge">Open Source · IAI09 Capstone · by Datronex</div>
     <h1>Deeper diagnostics,<br><span>plain language.</span></h1>
     <p>
       Your vehicle generates rich sensor data on every drive. MisfireAI reads it,
       scores it, and tells you what it means — before a warning light ever comes on.
     </p>
     <div class="hero-buttons">
-      <a href="https://github.com/jomoglobal/iai09-signal-harvester" target="_blank" class="btn-primary">View on GitHub</a>
+      <a href="https://github.com/jomoglobal/misfire-ai" target="_blank" class="btn-primary">View on GitHub</a>
       <a href="#how-it-works" class="btn-secondary">See How It Works</a>
     </div>
   </div>
@@ -464,9 +473,9 @@
   <footer>
     <div class="footer-inner">
       <div class="footer-logo">MisfireAI</div>
-      <div class="footer-sub">Powered by Datronex · IAI09 Capstone · May 2026</div>
+      <div class="footer-sub">A Datronex product · IAI09 Capstone · May 2026</div>
       <div class="footer-links">
-        <a href="https://github.com/jomoglobal/iai09-signal-harvester" target="_blank">GitHub</a>
+        <a href="https://github.com/jomoglobal/misfire-ai" target="_blank">GitHub</a>
         <a href="mailto:misfire@datronex.net">Contact</a>
         <a href="#how-it-works">How It Works</a>
         <a href="#features">Features</a>
