@@ -1,11 +1,13 @@
 """
-MisfireAI MCP Server — 4 atomic tools for the diagnostic pipeline.
+MisfireAI MCP Server — 6 atomic tools for the diagnostic pipeline.
 
 Tools:
-  ingest_file         — parse a CSV log file → normalized PID snapshot
-  decode_vin          — VIN → vehicle metadata via NHTSA API
-  lookup_tsb          — VIN + symptom → TSBs and recalls via NHTSA
+  ingest_file          — parse a CSV log file → normalized PID snapshot
+  decode_vin           — VIN → vehicle metadata via NHTSA API
+  lookup_tsb           — VIN + symptom → TSBs and recalls via NHTSA
   score_vehicle_health — normalized snapshot → per-system health scores (0–1)
+  ingest_batch         — ingest all CSVs in a folder, persist to session store
+  query_trends         — longitudinal PID trend for a vehicle from the store
 
 Run:  python -m tools.mcp_server
       or: mcp run tools/mcp_server.py
@@ -19,106 +21,191 @@ import re
 import statistics
 import urllib.request
 import urllib.parse
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from tools.schema import (
+    SOURCE_COLUMN_MAP,
+    UNIT_CONVERSIONS,
+    ROLLOVER_SENTINELS,
+    HEALTHY_RANGES,
+    SATURATION_LIMITS,
+    SIGNAL_SCHEMA,
+    detect_source,
+)
+from tools.session_store import SessionStore, SessionRecord, parse_mhd_filename
+
 mcp = FastMCP("MisfireAI")
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+_SESSION_DB = str(REPO_ROOT / "data" / "sessions.db")
+
+
 # ---------------------------------------------------------------------------
-# Column name maps — translate source-specific headers to canonical PID names
+# Internal helpers
 # ---------------------------------------------------------------------------
 
-# carOBD (Toyota Etios / generic ELM327 uppercase)
-_CAROBD_MAP = {
-    "ENGINE_RPM": "RPM",
-    "ENGINE_LOAD": "LOAD",
-    "COOLANT_TEMPERATURE": "ECT",
-    "SHORT_TERM_FUEL_TRIM_BANK_1": "STFT_B1",
-    "LONG_TERM_FUEL_TRIM_BANK_1": "LTFT_B1",
-    "SHORT_TERM_FUEL_TRIM_BANK_2": "STFT_B2",
-    "LONG_TERM_FUEL_TRIM_BANK_2": "LTFT_B2",
-    "INTAKE_MANIFOLD_PRESSURE": "MAP",
-    "MAF": "MAF",
-    "INTAKE_AIR_TEMP": "IAT",
-    "VEHICLE_SPEED": "VSS",
-    "THROTTLE": "THROTTLE",
-    "TIMING_ADVANCE": "TIMING_ADV",
-    "CATALYST_TEMPERATURE_BANK1_SENSOR1": "CAT_TEMP_B1S1",
-    "CATALYST_TEMPERATURE_BANK1_SENSOR2": "CAT_TEMP_B1S2",
-    "ENGINE_RUN_TINE": "RUN_TIME",
-}
+def _strip_units(header: str) -> str:
+    """Remove trailing unit bracket/paren from a column header."""
+    return re.sub(r'\s*[\[\(][^\]\)]*[\]\)]\s*$', '', header).strip()
 
-# Car Scanner exports (BMW 335i — verbose human-readable headers)
-_CARSCANNER_MAP = {
-    "Engine RPM (rpm)": "RPM",
-    "Engine RPM x1000 (rpm)": None,  # duplicate, skip
-    "Calculated engine load value (%)": "LOAD",
-    "Engine coolant temperature (℉)": "ECT_F",  # Fahrenheit — converted below
-    "Short term fuel % trim - Bank 1 (%)": "STFT_B1",
-    "Long term fuel % trim - Bank 1 (%)": "LTFT_B1",
-    "Short term fuel % trim - Bank 2 (%)": "STFT_B2",
-    "Long term fuel % trim - Bank 2 (%)": "LTFT_B2",
-    "Intake air temperature (℉)": "IAT_F",
-    "Intake manifold absolute pressure (psi)": "MAP_PSI",
-    "Vehicle speed (mph)": "VSS_MPH",
-    "Timing advance (°)": "TIMING_ADV",
-    "Calculated boost (psi)": "BOOST_PSI",
-}
 
-# Isay Gerard / cephasax (Spanish headers — translated)
-_ISAY_MAP = {
-    "RPM del motor": "RPM",
-    "Carga calculada del motor ": "LOAD",
-    "Temperatura del líquido de enfriamiento del motor": "ECT",
-    "Ajuste de combustible a corto plazo (Banco 1) ": "STFT_B1",
-    "Ajuste de combustible a largo plazo (Banco 1)": "LTFT_B1",
-    "SHORT TERM FUEL TRIM BANK 1": "STFT_B1",
-    "SHORT TERM FUEL TRIM BANK 2": "STFT_B2",
-    "LONG TERM FUEL TRIM BANK 2": "LTFT_B2",
-    "ENGINE_COOLANT_TEMP": "ECT",
-    "ENGINE_RPM": "RPM",
-    "ENGINE_LOAD": "LOAD",
-    "MAF": "MAF",
-    "SPEED": "VSS",
-    "THROTTLE_POS": "THROTTLE",
-    "TIMING_ADVANCE": "TIMING_ADV",
-    "TROUBLE_CODES": "DTCs",
-}
+def _is_mhd_version_col(col: str) -> bool:
+    """Detect the MHD version string column that appears at the end of the header row."""
+    s = col.strip()
+    return s.startswith("MHD ") or s.startswith("MHD\t") or re.match(r'^MHD\s', s) is not None
 
-_ALL_MAPS = [_CAROBD_MAP, _CARSCANNER_MAP, _ISAY_MAP]
 
-KNOWN_PID_ALIASES: dict[str, str] = {}
-for m in _ALL_MAPS:
-    for src, canon in m.items():
-        if canon:
-            KNOWN_PID_ALIASES[src.strip()] = canon
+_SENTINEL = object()  # distinguishes "key absent" from "key maps to None"
 
-# Rollover sentinels — ELM327 artifacts to flag
-ROLLOVER_SENTINELS: dict[str, list[float]] = {
-    "ECT":    [255.0],
-    "MAP":    [255.0],
-    "STFT_B1": [-96.0, -100.0],
-    "STFT_B2": [-96.0, -100.0],
-}
 
-# Expected healthy ranges for scoring
-HEALTHY_RANGES: dict[str, tuple[float, float]] = {
-    "STFT_B1":  (-5.0,  5.0),
-    "STFT_B2":  (-5.0,  5.0),
-    "LTFT_B1":  (-5.0,  5.0),
-    "LTFT_B2":  (-5.0,  5.0),
-    "ECT":      (75.0, 110.0),  # broad operating range — 75°C min (still warming) to 110°C
-    "TIMING_ADV": (-5.0, 45.0),  # idle can be low/negative; cruise can be high
-    "CAT_TEMP_B1S1": (300.0, 850.0),  # cat needs 300°C+ to be active; >850 is concerning
-}
+def _build_col_map(source: str, raw_cols: list[str]) -> dict[str, str | None]:
+    """
+    Map raw column headers → canonical names for the given source.
 
-SATURATION_LIMITS: dict[str, float] = {
-    "STFT_B1": 25.0,
-    "STFT_B2": 25.0,
-    "LTFT_B1": 25.0,
-    "LTFT_B2": 25.0,
-}
+    Lookup order:
+      1. Exact (source, col) in SOURCE_COLUMN_MAP
+      2. Exact (source, col.strip()) in SOURCE_COLUMN_MAP
+      3. Stripped unit variant: (source, _strip_units(col))
+
+    Returns {raw_col: canonical_name | None}.
+    None means explicitly skipped (e.g. duplicate column).
+    Columns not found in any lookup are omitted from the result.
+    """
+    col_map: dict[str, str | None] = {}
+    for col in raw_cols:
+        if _is_mhd_version_col(col):
+            continue
+        stripped = col.strip()
+        bare = _strip_units(stripped)
+
+        for key in ((source, col), (source, stripped), (source, bare)):
+            val = SOURCE_COLUMN_MAP.get(key, _SENTINEL)
+            if val is not _SENTINEL:
+                # val is either a canonical name string or None (explicit skip)
+                col_map[col] = val  # type: ignore[assignment]
+                break
+
+    return col_map
+
+
+def _derive_knock_retard(accum: dict[str, list[float]]) -> float | None:
+    """Return the minimum (most negative) per-cylinder timing correction in the session."""
+    cyl_pids = [f"TIMING_CYL{i}" for i in range(1, 7)]
+    all_vals: list[float] = []
+    for pid in cyl_pids:
+        if pid in accum:
+            all_vals.extend(accum[pid])
+    return min(all_vals) if all_vals else None
+
+
+def _families_from_pids(pid_names: list[str]) -> dict[str, list[str]]:
+    """Return {family: [canonical_names...]} for the given pids present."""
+    families: dict[str, list[str]] = {}
+    for pid in pid_names:
+        sig = SIGNAL_SCHEMA.get(pid)
+        if sig:
+            fam = sig["family"]
+            families.setdefault(fam, []).append(pid)
+    return families
+
+
+def _read_csv(file_path: str) -> tuple[list[str], list[dict]]:
+    """Read a CSV file handling UTF-8 BOM and auto-detecting delimiter."""
+    with open(file_path, newline="", encoding="utf-8-sig", errors="replace") as f:
+        sample = f.read(4096)
+    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+
+    with open(file_path, newline="", encoding="utf-8-sig", errors="replace") as f:
+        reader = csv.DictReader(f, delimiter=delimiter)
+        raw_cols = reader.fieldnames or []
+        rows = [row for row in reader]
+
+    return raw_cols, rows
+
+
+def _ingest_rows(
+    source: str,
+    raw_cols: list[str],
+    rows: list[dict],
+    max_rows: int = 500,
+) -> tuple[dict[str, list[float]], set[str], list[str]]:
+    """
+    Core ingestion loop. Returns (accum, dtc_set, warnings).
+
+    accum: canonical_name → list of float values
+    dtc_set: set of DTC code strings
+    warnings: list of data quality warning strings
+    """
+    col_map = _build_col_map(source, raw_cols)
+    accum: dict[str, list[float]] = {}
+    dtc_set: set[str] = set()
+    warnings: list[str] = []
+
+    for row in rows[:max_rows]:
+        for raw_col, canon in col_map.items():
+            if canon is None:
+                continue
+            val_str = row.get(raw_col, "").strip()
+            if not val_str:
+                continue
+
+            # Meta string columns
+            if canon in ("DTCs", "VEHICLE_MARK", "VEHICLE_MODEL", "VEHICLE_YEAR"):
+                if canon == "DTCs":
+                    codes = [c.strip() for c in re.split(r'[,\n\|]', val_str) if c.strip()]
+                    for code in codes:
+                        if re.match(r'^[PBCU][0-9A-F]{4}$', code, re.IGNORECASE):
+                            dtc_set.add(code.upper())
+                continue
+
+            try:
+                num = float(val_str)
+            except ValueError:
+                continue
+
+            # Apply unit conversion if needed
+            conv = UNIT_CONVERSIONS.get((source, canon))
+            if conv is not None:
+                num = conv(num)
+
+            accum.setdefault(canon, []).append(num)
+
+    # Rollover sentinel checks
+    for pid, vals in accum.items():
+        if not vals:
+            continue
+        sentinels = ROLLOVER_SENTINELS.get(pid, [])
+        last_v = vals[-1]
+        std_v = statistics.stdev(vals) if len(vals) > 1 else 0.0
+        if last_v in sentinels or (std_v == 0 and last_v in [0.0, 255.0, 65535.0]):
+            warnings.append(
+                f"{pid}: value {last_v} with std={std_v:.2f} — likely ELM327 rollover artifact"
+            )
+
+    return accum, dtc_set, warnings
+
+
+def _build_pid_stats(accum: dict[str, list[float]]) -> dict[str, Any]:
+    pids: dict[str, Any] = {}
+    for pid, vals in accum.items():
+        if not vals:
+            continue
+        mean_v = statistics.mean(vals)
+        last_v = vals[-1]
+        min_v = min(vals)
+        max_v = max(vals)
+        std_v = statistics.stdev(vals) if len(vals) > 1 else 0.0
+        pids[pid] = {
+            "mean": round(mean_v, 3),
+            "min":  round(min_v, 3),
+            "max":  round(max_v, 3),
+            "last": round(last_v, 3),
+            "std":  round(std_v, 3),
+        }
+    return pids
 
 
 # ---------------------------------------------------------------------------
@@ -131,149 +218,67 @@ def ingest_file(file_path: str, source: str = "auto", max_rows: int = 500) -> st
     Parse a CSV log file from any supported source and return a normalized
     PID snapshot as JSON.
 
-    Supported sources: car_scanner, carobd, cephasax, isay_gerard, sample, auto.
+    Supported sources: car_scanner, carobd, cephasax, isay_gerard, mhd, auto.
     auto-detects the format from column headers.
 
     Returns a JSON object with:
       - source: detected or provided source name
+      - file: base filename
       - row_count: number of data rows read
-      - pids: dict of canonical PID name → {mean, min, max, last, std, unit}
+      - pids: dict of canonical PID name → {mean, min, max, last, std}
+      - families: dict of family_name → list of canonical PIDs present
       - dtcs: list of DTC codes found (if any)
       - warnings: list of data quality issues detected
+      - session_meta: dict with tune/fuel_mix/vehicle_id for MHD files; {} otherwise
     """
     if not os.path.exists(file_path):
         return json.dumps({"error": f"File not found: {file_path}"})
 
     try:
-        # Detect delimiter
-        with open(file_path, newline="", encoding="utf-8", errors="replace") as f:
-            sample = f.read(2048)
-        delimiter = ";" if sample.count(";") > sample.count(",") else ","
-
-        with open(file_path, newline="", encoding="utf-8", errors="replace") as f:
-            reader = csv.DictReader(f, delimiter=delimiter)
-            raw_cols = reader.fieldnames or []
-            rows = []
-            for i, row in enumerate(reader):
-                if i >= max_rows:
-                    break
-                rows.append(row)
+        raw_cols, rows = _read_csv(file_path)
 
         if not rows:
             return json.dumps({"error": "File is empty or has no data rows"})
 
-        # Build alias lookup from actual columns
-        col_map: dict[str, str] = {}
-        for col in raw_cols:
-            stripped = col.strip()
-            # Direct alias match
-            if stripped in KNOWN_PID_ALIASES:
-                col_map[col] = KNOWN_PID_ALIASES[stripped]
-                continue
-            # Fuzzy: strip units in parens and retry
-            bare = re.sub(r'\s*[\(\[].*?[\)\]]', '', stripped).strip()
-            if bare in KNOWN_PID_ALIASES:
-                col_map[col] = KNOWN_PID_ALIASES[bare]
+        # Filter out MHD version string column from raw_cols before detection
+        visible_cols = [c for c in raw_cols if not _is_mhd_version_col(c)]
 
-        if not col_map:
+        # Detect source
+        detected_source = source if source != "auto" else detect_source(visible_cols)
+
+        accum, dtc_set, warnings = _ingest_rows(
+            detected_source, raw_cols, rows, max_rows=max_rows
+        )
+
+        # Derive KNOCK_RETARD from per-cylinder timing corrections
+        knock = _derive_knock_retard(accum)
+        if knock is not None:
+            accum["KNOCK_RETARD"] = [knock]
+
+        if not accum and not dtc_set:
             return json.dumps({
                 "error": "No recognizable OBD2 columns found",
-                "columns_seen": raw_cols[:20],
+                "source_detected": detected_source,
+                "columns_seen": visible_cols[:20],
             })
 
-        # Detect source if auto
-        detected_source = source
-        if source == "auto":
-            col_set = set(raw_cols)
-            if any("℉" in c or "mph" in c or "psi" in c for c in col_set):
-                detected_source = "car_scanner"
-            elif any("Ajuste" in c or "RPM del" in c for c in col_set):
-                detected_source = "isay_gerard"
-            elif "SHORT TERM FUEL TRIM BANK 1" in col_set:
-                detected_source = "cephasax"
-            elif "ENGINE_RPM" in col_set or "ENGINE_RPM ()" in col_set:
-                detected_source = "carobd"
-            else:
-                detected_source = "unknown"
+        pids = _build_pid_stats(accum)
+        families = _families_from_pids(list(pids.keys()))
 
-        # Accumulate numeric values per canonical PID
-        accum: dict[str, list[float]] = {}
-        dtc_set: set[str] = set()
-        warnings: list[str] = []
-
-        for row in rows:
-            for raw_col, canon in col_map.items():
-                val_str = row.get(raw_col, "").strip()
-                if not val_str:
-                    continue
-
-                # DTCs column — collect codes
-                if canon == "DTCs":
-                    codes = [c.strip() for c in re.split(r'[,\n\|]', val_str) if c.strip()]
-                    for code in codes:
-                        if re.match(r'^[PBCU][0-9A-F]{4}$', code, re.IGNORECASE):
-                            dtc_set.add(code.upper())
-                    continue
-
-                try:
-                    num = float(val_str)
-                except ValueError:
-                    continue
-
-                # Unit conversions
-                if canon == "ECT_F":
-                    num = (num - 32) * 5 / 9
-                    canon = "ECT"
-                elif canon == "IAT_F":
-                    num = (num - 32) * 5 / 9
-                    canon = "IAT"
-                elif canon == "MAP_PSI":
-                    num = num * 6.89476
-                    canon = "MAP"
-                elif canon == "VSS_MPH":
-                    num = num * 1.60934
-                    canon = "VSS"
-                elif canon == "BOOST_PSI":
-                    num = num * 6.89476
-                    canon = "BOOST"
-
-                if canon not in accum:
-                    accum[canon] = []
-                accum[canon].append(num)
-
-        # Build PID summary stats
-        pids: dict[str, Any] = {}
-        for pid, vals in accum.items():
-            if not vals:
-                continue
-            mean_v = statistics.mean(vals)
-            last_v = vals[-1]
-            min_v = min(vals)
-            max_v = max(vals)
-            std_v = statistics.stdev(vals) if len(vals) > 1 else 0.0
-
-            # Flag rollover sentinels
-            sentinels = ROLLOVER_SENTINELS.get(pid, [])
-            if last_v in sentinels or (std_v == 0 and last_v in [0.0, 255.0, 65535.0]):
-                warnings.append(
-                    f"{pid}: value {last_v} with std={std_v:.2f} — likely ELM327 rollover artifact"
-                )
-
-            pids[pid] = {
-                "mean":  round(mean_v, 3),
-                "min":   round(min_v, 3),
-                "max":   round(max_v, 3),
-                "last":  round(last_v, 3),
-                "std":   round(std_v, 3),
-            }
+        # MHD session metadata from filename
+        session_meta: dict = {}
+        if detected_source == "mhd":
+            session_meta = parse_mhd_filename(os.path.basename(file_path))
 
         return json.dumps({
-            "source":    detected_source,
-            "file":      os.path.basename(file_path),
-            "row_count": len(rows),
-            "pids":      pids,
-            "dtcs":      sorted(dtc_set),
-            "warnings":  warnings,
+            "source":       detected_source,
+            "file":         os.path.basename(file_path),
+            "row_count":    min(len(rows), max_rows),
+            "pids":         pids,
+            "families":     families,
+            "dtcs":         sorted(dtc_set),
+            "warnings":     warnings,
+            "session_meta": session_meta,
         }, indent=2)
 
     except Exception as e:
@@ -309,16 +314,16 @@ def decode_vin(vin: str) -> str:
     error_text = fields.get("Error Text", "")
 
     decoded = {
-        "vin":          vin,
-        "make":         fields.get("Make", ""),
-        "model":        fields.get("Model", ""),
-        "year":         fields.get("Model Year", ""),
-        "engine":       fields.get("Engine Model", "") or fields.get("Displacement (L)", ""),
-        "displacement": fields.get("Displacement (L)", ""),
-        "fuel_type":    fields.get("Fuel Type - Primary", ""),
-        "cylinders":    fields.get("Engine Number of Cylinders", ""),
-        "drive_type":   fields.get("Drive Type", ""),
-        "plant_country": fields.get("Plant Country", ""),
+        "vin":              vin,
+        "make":             fields.get("Make", ""),
+        "model":            fields.get("Model", ""),
+        "year":             fields.get("Model Year", ""),
+        "engine":           fields.get("Engine Model", "") or fields.get("Displacement (L)", ""),
+        "displacement":     fields.get("Displacement (L)", ""),
+        "fuel_type":        fields.get("Fuel Type - Primary", ""),
+        "cylinders":        fields.get("Engine Number of Cylinders", ""),
+        "drive_type":       fields.get("Drive Type", ""),
+        "plant_country":    fields.get("Plant Country", ""),
         "nhtsa_error_code": error_code,
         "nhtsa_error_text": error_text if error_code != "0" else "",
     }
@@ -349,11 +354,11 @@ def lookup_tsb(vin: str, symptom: str = "", dtc: str = "") -> str:
         recalls = recall_data.get("results", [])
         results["recalls"] = [
             {
-                "campaign": r.get("NHTSACampaignNumber", ""),
-                "component": r.get("Component", ""),
-                "summary": r.get("Summary", ""),
+                "campaign":    r.get("NHTSACampaignNumber", ""),
+                "component":   r.get("Component", ""),
+                "summary":     r.get("Summary", ""),
                 "consequence": r.get("Consequence", ""),
-                "remedy": r.get("Remedy", ""),
+                "remedy":      r.get("Remedy", ""),
             }
             for r in recalls[:5]
         ]
@@ -364,7 +369,6 @@ def lookup_tsb(vin: str, symptom: str = "", dtc: str = "") -> str:
 
     # NHTSA complaints — filter by keyword if symptom provided
     try:
-        # Decode VIN first to get make/model/year for complaints lookup
         vin_url = f"https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/{vin}?format=json"
         with urllib.request.urlopen(vin_url, timeout=10) as resp:
             vin_data = json.loads(resp.read().decode())
@@ -382,7 +386,6 @@ def lookup_tsb(vin: str, symptom: str = "", dtc: str = "") -> str:
                 complaints_data = json.loads(resp.read().decode())
             all_complaints = complaints_data.get("results", [])
 
-            # Filter by symptom or DTC keywords if provided
             keyword = (symptom + " " + dtc).lower().strip()
             if keyword:
                 filtered = [
@@ -394,11 +397,11 @@ def lookup_tsb(vin: str, symptom: str = "", dtc: str = "") -> str:
 
             results["complaints"] = [
                 {
-                    "date": c.get("dateOfIncident", ""),
+                    "date":      c.get("dateOfIncident", ""),
                     "component": c.get("components", ""),
-                    "summary": c.get("summary", "")[:300],
-                    "crash": c.get("crash", False),
-                    "fire": c.get("fire", False),
+                    "summary":   c.get("summary", "")[:300],
+                    "crash":     c.get("crash", False),
+                    "fire":      c.get("fire", False),
                 }
                 for c in filtered[:5]
             ]
@@ -430,7 +433,9 @@ def score_vehicle_health(snapshot_json: str) -> str:
     Scoring methods (applied in priority order per system):
       1. Fuel trim trending — LTFT drift scored against saturation limit
       2. Statistical baseline deviation — mean vs. healthy range midpoint
-      3. Presence check — penalizes missing expected PIDs
+      3. AFR scoring — wideband lambda centered on 14.7 AFR stoichiometric
+      4. Knock retard — per-cylinder minimum correction (MHD only)
+      5. Presence check — penalizes missing expected PIDs
     """
     try:
         snapshot = json.loads(snapshot_json)
@@ -453,8 +458,7 @@ def score_vehicle_health(snapshot_json: str) -> str:
         mid = (lo + hi) / 2
         half_span = (hi - lo) / 2
         deviation = abs(val - mid)
-        score = max(0.0, 1.0 - (deviation / half_span))
-        return round(score, 3)
+        return round(max(0.0, 1.0 - (deviation / half_span)), 3)
 
     def _ltft_score(pid: str) -> tuple[float | None, str]:
         if pid not in pids:
@@ -463,12 +467,23 @@ def score_vehicle_health(snapshot_json: str) -> str:
         saturation = SATURATION_LIMITS.get(pid, 25.0)
         score = round(max(0.0, 1.0 - (abs(mean_val) / saturation)), 3)
         direction = "lean" if mean_val > 0 else "rich"
-        note = f"{mean_val:+.1f}% mean ({direction})"
-        return score, note
+        return score, f"{mean_val:+.1f}% mean ({direction})"
+
+    def _afr_score(pid: str) -> tuple[float | None, str]:
+        """Score AFR relative to stoichiometric 14.7 — healthy range 13.5–15.5."""
+        if pid not in pids:
+            return None, "absent"
+        mean_val = pids[pid]["mean"]
+        stoich = 14.7
+        half_span = 1.2  # (15.5 - 13.5) / 2
+        deviation = abs(mean_val - stoich)
+        score = round(max(0.0, 1.0 - (deviation / half_span)), 3)
+        direction = "lean" if mean_val > stoich else "rich"
+        return score, f"{pid}: {mean_val:.2f} AFR ({direction})"
 
     # --- Fueling system ---
-    fuel_scores = []
-    fuel_notes = []
+    fuel_scores: list[float] = []
+    fuel_notes: list[str] = []
 
     for pid in ["LTFT_B1", "LTFT_B2"]:
         s, note = _ltft_score(pid)
@@ -483,6 +498,12 @@ def score_vehicle_health(snapshot_json: str) -> str:
             stft_mean = pids[pid]["mean"]
             fuel_notes.append(f"{pid}: {stft_mean:+.1f}% mean")
 
+    for pid in ["AFR_B1", "AFR_B2"]:
+        s, note = _afr_score(pid)
+        if s is not None:
+            fuel_scores.append(s)
+            fuel_notes.append(note)
+
     if fuel_scores:
         fuel_score = round(statistics.mean(fuel_scores), 3)
         method = "fuel_trim_trending"
@@ -491,9 +512,9 @@ def score_vehicle_health(snapshot_json: str) -> str:
         method = "absent"
 
     scores["fueling"] = {
-        "score":  fuel_score,
-        "method": method,
-        "detail": fuel_notes,
+        "score":   fuel_score,
+        "method":  method,
+        "detail":  fuel_notes,
         "summary": _fueling_summary(fuel_score, fuel_notes),
     }
 
@@ -518,24 +539,41 @@ def score_vehicle_health(snapshot_json: str) -> str:
     }
 
     # --- Ignition ---
+    timing_scores: list[float] = []
+    timing_notes: list[str] = []
+
     timing_score = _range_score("TIMING_ADV")
     if timing_score is not None:
         timing_mean = pids["TIMING_ADV"]["mean"]
         timing_std  = pids["TIMING_ADV"]["std"]
-        timing_note = f"Timing advance mean {timing_mean:.1f}°, std {timing_std:.1f}°"
-        timing_summary = (
-            "Timing normal" if timing_score >= 0.7
-            else f"Timing retard detected — possible knock or ignition issue ({timing_mean:.0f}°)"
+        timing_scores.append(timing_score)
+        timing_notes.append(f"TIMING_ADV mean {timing_mean:.1f}°, std {timing_std:.1f}°")
+
+    # KNOCK_RETARD scoring: values more negative than -2° are concerning
+    # score = max(0, 1 + knock_retard/10) where knock_retard is the minimum correction
+    if "KNOCK_RETARD" in pids:
+        knock_val = pids["KNOCK_RETARD"]["mean"]  # single-value derived stat
+        knock_score = round(max(0.0, 1.0 + knock_val / 10.0), 3)
+        timing_scores.append(knock_score)
+        timing_notes.append(f"KNOCK_RETARD min={knock_val:.1f}°")
+
+    if timing_scores:
+        ignition_score = round(statistics.mean(timing_scores), 3)
+        ignition_method = "baseline_deviation"
+        ignition_summary = (
+            "Timing normal" if ignition_score >= 0.7
+            else f"Timing/knock concern detected — possible knock or ignition issue"
         )
     else:
-        timing_note = "TIMING_ADV absent"
-        timing_summary = "No timing advance data"
+        ignition_score = None
+        ignition_method = "absent"
+        ignition_summary = "No timing data"
 
     scores["ignition"] = {
-        "score":   timing_score,
-        "method":  "baseline_deviation" if timing_score is not None else "absent",
-        "detail":  [timing_note],
-        "summary": timing_summary,
+        "score":   ignition_score,
+        "method":  ignition_method,
+        "detail":  timing_notes if timing_notes else ["TIMING_ADV absent"],
+        "summary": ignition_summary,
     }
 
     # --- Catalyst ---
@@ -546,13 +584,15 @@ def score_vehicle_health(snapshot_json: str) -> str:
             "Catalyst temp normal" if cat_score >= 0.7
             else f"Catalyst temp out of range ({cat_mean:.0f}°C) — check for misfire or fuel richness"
         )
+        cat_detail = [f"CAT_TEMP_B1S1 mean {cat_mean:.0f}°C"]
     else:
         cat_summary = "No catalyst temp data"
+        cat_detail = ["absent"]
 
     scores["catalyst"] = {
         "score":   cat_score,
         "method":  "baseline_deviation" if cat_score is not None else "absent",
-        "detail":  [f"CAT_TEMP_B1S1 mean {pids['CAT_TEMP_B1S1']['mean']:.0f}°C"] if cat_score is not None else ["absent"],
+        "detail":  cat_detail,
         "summary": cat_summary,
     }
 
@@ -562,13 +602,13 @@ def score_vehicle_health(snapshot_json: str) -> str:
 
     return json.dumps({
         "overall_score": overall,
-        "systems": scores,
-        "dtcs_present": dtcs,
+        "systems":       scores,
+        "dtcs_present":  dtcs,
         "data_warnings": warnings,
         "scoring_note": (
-            "Scores are 0.0–1.0. Method: fuel_trim_trending for fueling; "
+            "Scores are 0.0–1.0. Methods: fuel_trim_trending for fueling (LTFT/STFT/AFR); "
             "baseline_deviation for cooling/ignition/catalyst. "
-            "Mode 06 margin scoring not available — no Mode 06 data in this session."
+            "KNOCK_RETARD is the most negative per-cylinder timing correction (MHD only)."
         ),
     }, indent=2)
 
@@ -583,6 +623,152 @@ def _fueling_summary(score: float | None, notes: list[str]) -> str:
     if score >= 0.40:
         return f"Significant fueling deviation — schedule inspection. {'; '.join(notes)}"
     return f"Severe fueling deviation — service soon. {'; '.join(notes)}"
+
+
+# ---------------------------------------------------------------------------
+# Tool 5 — ingest_batch
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def ingest_batch(
+    folder_path: str,
+    source: str = "auto",
+    vehicle_id: str = "",
+    max_files: int = 50,
+) -> str:
+    """
+    Ingest all CSV files in a folder, save each as a SessionRecord to the
+    session store, and return a summary.
+
+    Returns JSON with:
+      - processed: count of files successfully ingested
+      - errors: count of files that failed
+      - vehicle_id: the vehicle_id used (or "unknown")
+      - families_seen: list of signal families encountered across all files
+      - date_range: {earliest, latest} recorded_at values
+      - pid_coverage: {pid: pct_sessions_present} — fraction of sessions with each PID
+    """
+    if not os.path.isdir(folder_path):
+        return json.dumps({"error": f"Not a directory: {folder_path}"})
+
+    csv_files = sorted(
+        p for p in Path(folder_path).iterdir()
+        if p.suffix.lower() == ".csv"
+    )[:max_files]
+
+    if not csv_files:
+        return json.dumps({"error": "No CSV files found in folder"})
+
+    store = SessionStore(_SESSION_DB)
+
+    processed = 0
+    errors = 0
+    all_families: set[str] = set()
+    all_pids: dict[str, int] = {}  # pid → count of sessions where present
+    recorded_dates: list[str] = []
+
+    for csv_path in csv_files:
+        try:
+            snapshot_json = ingest_file(str(csv_path), source=source)
+            snapshot = json.loads(snapshot_json)
+
+            if "error" in snapshot:
+                errors += 1
+                continue
+
+            detected_source = snapshot.get("source", "unknown")
+            session_meta = snapshot.get("session_meta", {})
+
+            # Determine vehicle_id
+            vid = vehicle_id
+            if not vid:
+                if detected_source == "mhd" and session_meta.get("vehicle_id"):
+                    vid = session_meta["vehicle_id"]
+                else:
+                    vid = "unknown"
+
+            # Record time
+            recorded_at = ""
+            if detected_source == "mhd" and session_meta.get("recorded_at"):
+                recorded_at = session_meta["recorded_at"]
+            else:
+                try:
+                    mtime = os.path.getmtime(str(csv_path))
+                    from datetime import datetime, timezone
+                    recorded_at = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                except Exception:
+                    pass
+
+            pids_present = list(snapshot.get("pids", {}).keys())
+            families_dict = snapshot.get("families", {})
+            families_present = list(families_dict.keys())
+
+            for fam in families_present:
+                all_families.add(fam)
+            for pid in pids_present:
+                all_pids[pid] = all_pids.get(pid, 0) + 1
+
+            if recorded_at:
+                recorded_dates.append(recorded_at)
+
+            record = SessionRecord(
+                vehicle_id=      vid,
+                source=          detected_source,
+                file_path=       str(csv_path),
+                file_name=       csv_path.name,
+                recorded_at=     recorded_at,
+                row_count=       snapshot.get("row_count", 0),
+                pids_present=    pids_present,
+                families_present=families_present,
+                pid_stats=       snapshot.get("pids", {}),
+                dtcs=            snapshot.get("dtcs", []),
+                warnings=        snapshot.get("warnings", []),
+                session_meta=    session_meta,
+            )
+            store.save(record)
+            processed += 1
+
+        except Exception:
+            errors += 1
+
+    pid_coverage = {
+        pid: round(count / processed, 3) if processed else 0.0
+        for pid, count in all_pids.items()
+    }
+
+    recorded_dates_sorted = sorted(d for d in recorded_dates if d)
+
+    return json.dumps({
+        "processed":    processed,
+        "errors":       errors,
+        "vehicle_id":   vehicle_id or "unknown",
+        "families_seen": sorted(all_families),
+        "date_range": {
+            "earliest": recorded_dates_sorted[0] if recorded_dates_sorted else "",
+            "latest":   recorded_dates_sorted[-1] if recorded_dates_sorted else "",
+        },
+        "pid_coverage": pid_coverage,
+    }, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Tool 6 — query_trends
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def query_trends(vehicle_id: str, pid: str, limit: int = 50) -> str:
+    """
+    Return longitudinal trend data for a single PID across sessions of a vehicle.
+
+    Calls the session store and returns a JSON list of:
+      [{recorded_at: str, mean: float, min: float, max: float}, ...]
+    sorted chronologically, for up to `limit` sessions.
+
+    Useful for plotting STFT drift, LTFT trending, boost deviation over time, etc.
+    """
+    store = SessionStore(_SESSION_DB)
+    trend = store.get_trend(vehicle_id=vehicle_id, pid=pid, limit=limit)
+    return json.dumps(trend, indent=2)
 
 
 # ---------------------------------------------------------------------------

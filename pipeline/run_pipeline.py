@@ -9,6 +9,8 @@ Usage:
     python pipeline/run_pipeline.py --file data/external/carOBD/obdiidata/drive1.csv
     python pipeline/run_pipeline.py --file "data/sample/2009-BMW-335i-2026-04-15 13-15-01.csv" --vin WBAPN73579A395571
     python pipeline/run_pipeline.py --dry-run
+    python pipeline/run_pipeline.py --vehicle-id IJE0S --file data/mhd/session.csv
+    python pipeline/run_pipeline.py --batch data/mhd/
 """
 
 import argparse
@@ -40,8 +42,8 @@ def _url(endpoint: str) -> str:
 
 
 def _setup_tracing(project_name: str) -> trace.Tracer:
-    sravan_endpoint  = os.getenv("PHOENIX_COLLECTOR_ENDPOINT_SRAVAN", "")
-    sravan_key       = os.getenv("PHOENIX_API_KEY_SRAVAN", "")
+    sravan_endpoint   = os.getenv("PHOENIX_COLLECTOR_ENDPOINT_SRAVAN", "")
+    sravan_key        = os.getenv("PHOENIX_API_KEY_SRAVAN", "")
     personal_endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT_PERSONAL", "")
     personal_key      = os.getenv("PHOENIX_API_KEY_PERSONAL", "")
 
@@ -83,8 +85,16 @@ def _setup_tracing(project_name: str) -> trace.Tracer:
     return trace.get_tracer("misfire-ai-pipeline")
 
 
-def run(file_path: str, vin: str, recipient_email: str, dry_run: bool, project_name: str) -> None:
+def run(
+    file_path: str,
+    vin: str,
+    recipient_email: str,
+    dry_run: bool,
+    project_name: str,
+    vehicle_id_override: str = "",
+) -> None:
     from tools.mcp_server import ingest_file, decode_vin, lookup_tsb, score_vehicle_health
+    from tools.session_store import SessionStore, SessionRecord, parse_mhd_filename
 
     tracer = _setup_tracing(project_name)
 
@@ -109,11 +119,18 @@ def run(file_path: str, vin: str, recipient_email: str, dry_run: bool, project_n
             if dry_run:
                 snapshot_json = json.dumps({
                     "source": "dry_run", "file": "dry_run.csv", "row_count": 0,
-                    "pids": {"RPM": {"mean": 1200, "min": 800, "max": 2000, "last": 1100, "std": 150},
-                             "ECT": {"mean": 90, "min": 85, "max": 95, "last": 90, "std": 2},
-                             "LTFT_B1": {"mean": 3.1, "min": 0.8, "max": 6.2, "last": 3.9, "std": 1.1},
-                             "STFT_B1": {"mean": 0.5, "min": -3.1, "max": 4.7, "last": 0.8, "std": 1.8}},
-                    "dtcs": [], "warnings": [],
+                    "pids": {
+                        "RPM":     {"mean": 1200, "min": 800,  "max": 2000, "last": 1100, "std": 150},
+                        "ECT":     {"mean": 90,   "min": 85,   "max": 95,   "last": 90,   "std": 2},
+                        "LTFT_B1": {"mean": 3.1,  "min": 0.8,  "max": 6.2,  "last": 3.9,  "std": 1.1},
+                        "STFT_B1": {"mean": 0.5,  "min": -3.1, "max": 4.7,  "last": 0.8,  "std": 1.8},
+                    },
+                    "families": {
+                        "drivetrain": ["RPM"],
+                        "thermal":    ["ECT"],
+                        "fueling":    ["LTFT_B1", "STFT_B1"],
+                    },
+                    "dtcs": [], "warnings": [], "session_meta": {},
                 })
             else:
                 snapshot_json = ingest_file(str(file_path))
@@ -125,10 +142,10 @@ def run(file_path: str, vin: str, recipient_email: str, dry_run: bool, project_n
                 return
 
             pids = snapshot.get("pids", {})
-            span.set_attribute("catch.source", snapshot.get("source", ""))
-            span.set_attribute("catch.row_count", snapshot.get("row_count", 0))
-            span.set_attribute("catch.pid_count", len(pids))
-            span.set_attribute("catch.dtc_count", len(snapshot.get("dtcs", [])))
+            span.set_attribute("catch.source",        snapshot.get("source", ""))
+            span.set_attribute("catch.row_count",     snapshot.get("row_count", 0))
+            span.set_attribute("catch.pid_count",     len(pids))
+            span.set_attribute("catch.dtc_count",     len(snapshot.get("dtcs", [])))
             span.set_attribute("catch.warning_count", len(snapshot.get("warnings", [])))
 
             print(f"   ✅ source={snapshot['source']}  rows={snapshot['row_count']}  "
@@ -205,6 +222,70 @@ def run(file_path: str, vin: str, recipient_email: str, dry_run: bool, project_n
             for system, info in scores.get("systems", {}).items():
                 print(f"      {system:<12} {info.get('score', 'n/a')!s:<6}  {info['summary']}")
 
+        # ── PERSIST SESSION RECORD ────────────────────────────────────────
+        if not dry_run:
+            try:
+                detected_source = snapshot.get("source", "unknown")
+                session_meta    = snapshot.get("session_meta", {})
+
+                # Determine vehicle_id: CLI override > VIN decode > MHD filename > unknown
+                vid = vehicle_id_override
+                if not vid and vehicle_meta.get("make"):
+                    vid = (
+                        f"{vehicle_meta.get('make', '').lower()}-"
+                        f"{vehicle_meta.get('model', '').lower()}-"
+                        f"{vehicle_meta.get('year', '')}"
+                    ).strip("-")
+                if not vid and detected_source == "mhd" and session_meta.get("vehicle_id"):
+                    vid = session_meta["vehicle_id"]
+                if not vid:
+                    vid = "unknown"
+
+                # recorded_at: MHD filename parse > file mtime
+                recorded_at = ""
+                if detected_source == "mhd" and session_meta.get("recorded_at"):
+                    recorded_at = session_meta["recorded_at"]
+                else:
+                    try:
+                        import datetime as _dt
+                        mtime = os.path.getmtime(str(file_path))
+                        recorded_at = _dt.datetime.fromtimestamp(
+                            mtime, tz=_dt.timezone.utc
+                        ).isoformat()
+                    except Exception:
+                        pass
+
+                pids_present     = list(pids.keys())
+                families_present = list(snapshot.get("families", {}).keys())
+                system_scores    = {
+                    k: v.get("score")
+                    for k, v in scores.get("systems", {}).items()
+                }
+
+                record = SessionRecord(
+                    vehicle_id=      vid,
+                    source=          detected_source,
+                    file_path=       str(file_path),
+                    file_name=       Path(file_path).name,
+                    recorded_at=     recorded_at,
+                    row_count=       snapshot.get("row_count", 0),
+                    pids_present=    pids_present,
+                    families_present=families_present,
+                    pid_stats=       pids,
+                    dtcs=            snapshot.get("dtcs", []),
+                    warnings=        snapshot.get("warnings", []),
+                    session_meta=    session_meta,
+                    overall_score=   overall,
+                    system_scores=   system_scores,
+                )
+
+                store = SessionStore(str(REPO_ROOT / "data" / "sessions.db"))
+                store.save(record)
+                print(f"\n   ✅ Session saved → {record.session_id} (vehicle={vid})")
+
+            except Exception as e:
+                print(f"\n   ⚠  Session store error: {e}")
+
         # ── STAGE 4: COMPOUND — diagnostic agent ─────────────────────────
         print("▶  [4/4] COMPOUND — diagnostic agent")
         with tracer.start_as_current_span("misfire.compound.agent") as span:
@@ -225,12 +306,14 @@ def run(file_path: str, vin: str, recipient_email: str, dry_run: bool, project_n
                     agent_snapshot["DTCs"] = snapshot["dtcs"]
 
                 # Use first vehicle from vehicles.py if no VIN match, else best guess
-                vehicle_id = "bmw-335i-2009" if "BMW" in str(vehicle_meta.get("make","")).upper() \
-                    else "tundra-2007" if "TOYOTA" in str(vehicle_meta.get("make","")).upper() \
+                vehicle_id_agent = (
+                    "bmw-335i-2009" if "BMW" in str(vehicle_meta.get("make", "")).upper()
+                    else "tundra-2007" if "TOYOTA" in str(vehicle_meta.get("make", "")).upper()
                     else "honda-fit-2015"
+                )
 
                 agent_input = AgentInput(
-                    vehicle_id=vehicle_id,
+                    vehicle_id=vehicle_id_agent,
                     snapshot=agent_snapshot,
                     scenario=f"pipeline_run:{Path(file_path).stem}",
                 )
@@ -265,9 +348,9 @@ def run(file_path: str, vin: str, recipient_email: str, dry_run: bool, project_n
 
                     print(f"\n▶  HITL — sending repair brief to {recipient_email}")
                     hitl_result = send_approval_request(brief)
-                    span.set_attribute("hitl.decision",    hitl_result["decision"])
-                    span.set_attribute("hitl.decided_at",  hitl_result.get("decided_at") or "")
-                    span.set_attribute("hitl.token",       hitl_result["token"])
+                    span.set_attribute("hitl.decision",   hitl_result["decision"])
+                    span.set_attribute("hitl.decided_at", hitl_result.get("decided_at") or "")
+                    span.set_attribute("hitl.token",      hitl_result["token"])
                 elif recipient_email:
                     print(f"\n   ℹ  Urgency={output.urgency} — HITL gate not triggered (LOW/NORMAL only)")
 
@@ -278,22 +361,64 @@ def run(file_path: str, vin: str, recipient_email: str, dry_run: bool, project_n
     print(f"{'='*60}\n")
 
 
+def run_batch(folder_path: str, project_name: str) -> None:
+    """Run ingest_batch on a folder and print results."""
+    from tools.mcp_server import ingest_batch
+
+    tracer = _setup_tracing(project_name)
+
+    print(f"\n{'='*60}")
+    print(f"MisfireAI Batch Ingest")
+    print(f"  folder: {folder_path}")
+    print(f"{'='*60}\n")
+
+    with tracer.start_as_current_span("misfire.batch") as span:
+        span.set_attribute("batch.folder", folder_path)
+        result_json = ingest_batch(folder_path=folder_path, max_files=500)
+        result = json.loads(result_json)
+
+        if "error" in result:
+            print(f"   ❌ {result['error']}")
+            return
+
+        span.set_attribute("batch.processed", result.get("processed", 0))
+        span.set_attribute("batch.errors",    result.get("errors", 0))
+
+        print(f"   ✅ processed={result['processed']}  errors={result['errors']}")
+        print(f"      vehicle_id={result['vehicle_id']}")
+        print(f"      families={result['families_seen']}")
+        print(f"      date_range={result['date_range']}")
+        print(f"      pid_coverage ({len(result.get('pid_coverage', {}))} PIDs):")
+        for pid, pct in sorted(result.get("pid_coverage", {}).items(), key=lambda x: -x[1]):
+            print(f"        {pid:<30} {pct:.0%}")
+
+    print(f"\n{'='*60}")
+    print("Batch ingest complete")
+    print(f"{'='*60}\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="MisfireAI pipeline runner")
-    parser.add_argument("--file",    default=str(DEFAULT_FILE), help="Path to log file")
-    parser.add_argument("--vin",     default=DEFAULT_VIN,       help="17-char VIN (optional)")
-    parser.add_argument("--email",   default="",                help="Owner email for HITL approval")
-    parser.add_argument("--dry-run", action="store_true",       help="Skip API calls, emit traces only")
-    parser.add_argument("--project", default="MisfireAI",       help="Phoenix project name")
+    parser.add_argument("--file",       default=str(DEFAULT_FILE), help="Path to log file")
+    parser.add_argument("--vin",        default=DEFAULT_VIN,       help="17-char VIN (optional)")
+    parser.add_argument("--email",      default="",                help="Owner email for HITL approval")
+    parser.add_argument("--dry-run",    action="store_true",       help="Skip API calls, emit traces only")
+    parser.add_argument("--project",    default="MisfireAI",       help="Phoenix project name")
+    parser.add_argument("--vehicle-id", default="",                help="Override vehicle_id in session record")
+    parser.add_argument("--batch",      default="",                help="Path to a folder — run ingest_batch instead of single file pipeline")
     args = parser.parse_args()
 
-    run(
-        file_path=args.file,
-        vin=args.vin,
-        recipient_email=args.email,
-        dry_run=args.dry_run,
-        project_name=args.project,
-    )
+    if args.batch:
+        run_batch(folder_path=args.batch, project_name=args.project)
+    else:
+        run(
+            file_path=args.file,
+            vin=args.vin,
+            recipient_email=args.email,
+            dry_run=args.dry_run,
+            project_name=args.project,
+            vehicle_id_override=getattr(args, "vehicle_id", ""),
+        )
 
 
 if __name__ == "__main__":
