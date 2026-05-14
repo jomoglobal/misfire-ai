@@ -815,9 +815,20 @@ SOURCE_COLUMN_MAP: dict[tuple[str, str], str] = {
     ("carobd", "CATALYST_TEMPERATURE_BANK1_SENSOR2"):      "CAT_TEMP_B1S2",
     ("carobd", "ENGINE_RUN_TINE"):                         "RUN_TIME",  # source typo preserved
     # ── CEPHASAX ─────────────────────────────────────────────────────────────
+    # dailyRoutes.csv — space-separated fuel trim names
     ("cephasax", "SHORT TERM FUEL TRIM BANK 1"):           "STFT_B1",
     ("cephasax", "SHORT TERM FUEL TRIM BANK 2"):           "STFT_B2",
     ("cephasax", "LONG TERM FUEL TRIM BANK 2"):            "LTFT_B2",
+    ("cephasax", "LONG TERM FUEL TRIM BANK 1"):            "LTFT_B1",
+    # 19drivers.csv / 4drivers.csv — mixed-case fuel trim names
+    ("cephasax", "Term Fuel Trim Bank 1"):                 "STFT_B1",
+    ("cephasax", "TERM FUEL TRIM BANK 1"):                 "STFT_B1",
+    ("cephasax", "Short Term Fuel Trim Bank 1"):           "STFT_B1",
+    ("cephasax", "SHORT TERM FUEL TRIM BANK 1"):           "STFT_B1",
+    ("cephasax", "Short Term Fuel Trim Bank 2"):           "STFT_B2",
+    ("cephasax", "SHORT TERM FUEL TRIM BANK 2"):           "STFT_B2",
+    ("cephasax", "Long Term Fuel Trim Bank 1"):            "LTFT_B1",
+    ("cephasax", "Long Term Fuel Trim Bank 2"):            "LTFT_B2",
     ("cephasax", "ENGINE_COOLANT_TEMP"):                   "ECT",
     ("cephasax", "ENGINE_RPM"):                            "RPM",
     ("cephasax", "ENGINE_LOAD"):                           "LOAD",
@@ -835,6 +846,15 @@ SOURCE_COLUMN_MAP: dict[tuple[str, str], str] = {
     ("cephasax", "MARK"):                                  "VEHICLE_MARK",
     ("cephasax", "MODEL"):                                 "VEHICLE_MODEL",
     ("cephasax", "CAR_YEAR"):                              "VEHICLE_YEAR",
+    ("cephasax", "BAROMETRIC_PRESSURE"):                   "AMB_PRESSURE",
+    ("cephasax", "BAROMETRIC_PRESSURE(KPA)"):              "AMB_PRESSURE",
+    ("cephasax", "ENGINE_RUNTIME"):                        "RUN_TIME",
+    ("cephasax", "ALTITUDE"):                              None,   # GPS-derived, skip
+    ("cephasax", "LATITUDE"):                              None,
+    ("cephasax", "LONGITUDE"):                             None,
+    ("cephasax", "FUEL_LEVEL"):                            None,   # not a diagnostic PID
+    ("cephasax", "FUEL_ECONOMY"):                          None,
+    ("cephasax", "FUEL_TYPE"):                             None,
     # ── ISAY GERARD ──────────────────────────────────────────────────────────
     # Full headers with unit brackets (exact)
     ("isay_gerard", "RPM del motor [rpm]"):                                                    "RPM",
@@ -985,8 +1005,14 @@ def detect_source(columns: list[str]) -> str:
     # Isay Gerard: Spanish headers
     if any("Ajuste" in c or "RPM del motor" in c or "líquido" in c for c in col_set):
         return "isay_gerard"
-    # cephasax: has TROUBLE_CODES or MARK or space-delimited fuel trim names
-    if "SHORT TERM FUEL TRIM BANK 1" in col_set or "TROUBLE_CODES" in col_set or "MARK" in col_set:
+    # cephasax: has TROUBLE_CODES or MARK or space-delimited fuel trim names (any case)
+    col_upper = set(c.upper() for c in col_set)
+    if (
+        "TROUBLE_CODES" in col_set or "MARK" in col_set
+        or "SHORT TERM FUEL TRIM BANK 1" in col_upper
+        or "TERM FUEL TRIM BANK 1" in col_upper
+        or "DTC_NUMBER" in col_set
+    ):
         return "cephasax"
     # carOBD: uppercase OBD2 names — check bare (unit-stripped) set since columns are "ENGINE_RPM ()"
     if "ENGINE_RPM" in bare_set or "COOLANT_TEMPERATURE" in bare_set or "ENGINE_RUN_TINE" in bare_set:

@@ -164,7 +164,14 @@ def _ingest_rows(
             try:
                 num = float(val_str)
             except ValueError:
-                continue
+                # Strip trailing unit characters (e.g. "82C", "100kPa", "79,20%")
+                # and handle European decimal comma (e.g. "79,20" → "79.20")
+                cleaned = re.sub(r'[A-Za-z%°]+$', '', val_str).strip()
+                cleaned = cleaned.replace(',', '.')
+                try:
+                    num = float(cleaned)
+                except ValueError:
+                    continue
 
             # Apply unit conversion if needed
             conv = UNIT_CONVERSIONS.get((source, canon))
