@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from openai import OpenAI
 from opentelemetry import trace
 
-from pipeline.vehicles import VehicleConfig, get_vehicle_by_id
+from pipeline.vehicles import VehicleConfig, get_vehicle_by_id, build_vehicle_from_meta
 from pipeline.preprocessor import preprocess_snapshot
 
 tracer = trace.get_tracer("misfire-ai")
@@ -21,6 +21,7 @@ class AgentInput:
     vehicle_id: str
     snapshot: dict
     scenario: str = ""
+    vehicle_override: VehicleConfig | None = None
 
 
 @dataclass
@@ -86,7 +87,7 @@ Vehicle under analysis:
 
 
 def run_diagnostic_agent(input: AgentInput) -> AgentOutput:
-    vehicle = get_vehicle_by_id(input.vehicle_id)
+    vehicle = input.vehicle_override or get_vehicle_by_id(input.vehicle_id)
     if not vehicle:
         raise ValueError(f"Unknown vehicle_id: '{input.vehicle_id}'")
 

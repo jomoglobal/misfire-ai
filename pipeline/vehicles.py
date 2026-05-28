@@ -129,3 +129,67 @@ def get_vehicle_by_id(vehicle_id: str) -> Optional[VehicleConfig]:
 
 def list_vehicle_ids() -> list[str]:
     return [v.id for v in VEHICLES]
+
+
+def build_vehicle_from_meta(vehicle_id: str, meta: dict) -> VehicleConfig:
+    """Build a generic VehicleConfig from VIN-decoded metadata for unknown vehicles."""
+    make = meta.get("make", "Unknown").title()
+    model = meta.get("model", "Unknown").title()
+    try:
+        year = int(meta.get("year", 0))
+    except (ValueError, TypeError):
+        year = 0
+
+    try:
+        displacement = float(meta.get("displacement", 0))
+    except (ValueError, TypeError):
+        displacement = 0.0
+
+    try:
+        cylinders = int(meta.get("cylinders", 4))
+    except (ValueError, TypeError):
+        cylinders = 4
+
+    fuel_type_raw = (meta.get("fuel_type") or "Gasoline").lower()
+    fuel_type = "gasoline"
+    if "flex" in fuel_type_raw or "ethanol" in fuel_type_raw or "e85" in fuel_type_raw:
+        fuel_type = "flex-fuel"
+
+    turbo_raw = (meta.get("turbo") or meta.get("engine_turbo") or "").lower()
+    turbocharged = "turbo" in turbo_raw or "supercharg" in turbo_raw
+
+    if cylinders <= 4:
+        cyl_label = "I4"
+        bank_count = 1
+    elif cylinders == 6:
+        cyl_label = "V6"
+        bank_count = 2
+    elif cylinders >= 8:
+        cyl_label = "V8"
+        bank_count = 2
+    else:
+        cyl_label = f"I{cylinders}"
+        bank_count = 1
+
+    disp_str = f"{displacement:.1f}L " if displacement else ""
+    engine_str = f"{disp_str}{cyl_label} {fuel_type.title()}"
+    if turbocharged:
+        engine_str += " Turbo"
+
+    return VehicleConfig(
+        id=vehicle_id,
+        make=make,
+        model=model,
+        year=year,
+        engine=engine_str,
+        turbocharged=turbocharged,
+        bank_count=bank_count,
+        fuel_system="MAF",
+        fuel_type=fuel_type,
+        has_egr=False,
+        known_quirks=[],
+        expected_pids=[
+            "0104", "0105", "010B", "010C", "010D", "010F",
+            "0111", "0114", "0115", "0106", "0107",
+        ],
+    )

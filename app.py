@@ -25,7 +25,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 
 from tools.mcp_server import ingest_file, decode_vin, lookup_tsb, score_vehicle_health
 from tools.session_store import SessionStore, SessionRecord, parse_mhd_filename
-from pipeline.vehicles import get_vehicle_by_id, list_vehicle_ids
+from pipeline.vehicles import get_vehicle_by_id, build_vehicle_from_meta, list_vehicle_ids
 
 REPO_ROOT = Path(__file__).parent
 SESSION_DB = str(REPO_ROOT / "data" / "sessions.db")
@@ -244,13 +244,39 @@ def _pipeline_generator(
                 tsb_results = json.loads(lookup_tsb(vin.strip(), symptom=symptom))
             except Exception:
                 tsb_results = {}
+            # Build human-readable engine string
+            engine_raw = vehicle_meta.get("engine", "")
+            displacement = vehicle_meta.get("displacement", "")
+            cylinders = vehicle_meta.get("cylinders", "")
+            fuel_type_raw = vehicle_meta.get("fuel_type", "")
+            try:
+                disp_f = float(displacement)
+                disp_str = f"{disp_f:.1f}L" if disp_f else ""
+            except (ValueError, TypeError):
+                disp_str = ""
+            cyl_str = f"{cylinders}-cyl" if cylinders else ""
+            fuel_str = fuel_type_raw.split("/")[0].strip().title() if fuel_type_raw else ""
+            if engine_raw and not engine_raw.replace(".", "").isdigit():
+                engine_display = engine_raw
+            elif disp_str or cyl_str or fuel_str:
+                engine_display = " ".join(filter(None, [disp_str, cyl_str, fuel_str]))
+            else:
+                engine_display = ""
+
             yield _sse("enrich", {
                 "make":             vehicle_meta.get("make", ""),
                 "model":            vehicle_meta.get("model", ""),
                 "year":             vehicle_meta.get("year", ""),
-                "engine":           vehicle_meta.get("engine", ""),
+                "engine":           engine_display,
+                "displacement":     displacement,
+                "cylinders":        cylinders,
+                "fuel_type":        fuel_type_raw,
+                "drive_type":       vehicle_meta.get("drive_type", ""),
+                "plant_country":    vehicle_meta.get("plant_country", ""),
                 "recall_count":     tsb_results.get("recall_count", 0),
                 "complaint_count":  tsb_results.get("complaint_count", 0),
+                "recalls":          tsb_results.get("recalls", []),
+                "complaints":       tsb_results.get("complaints", []),
             })
         else:
             yield _sse("enrich", {"skipped": True})
@@ -293,19 +319,14 @@ def _pipeline_generator(
             if not vid_agent and session_meta.get("vehicle_id"):
                 vid_agent = session_meta["vehicle_id"]
             if not vid_agent:
-                make_up = vehicle_meta.get("make", "").upper()
-                if "BMW" in make_up:
-                    vid_agent = "bmw-335i-2009"
-                elif "TOYOTA" in make_up:
-                    vid_agent = "tundra-2007"
-                elif "HONDA" in make_up:
-                    vid_agent = "honda-fit-2015"
-                else:
-                    vid_agent = "bmw-335i-2009"
+                vid_agent = "unknown"
 
-            # Validate vid_agent exists
-            if not get_vehicle_by_id(vid_agent):
-                vid_agent = "bmw-335i-2009"
+            # Use registered config if available, otherwise build from VIN meta
+            vehicle_cfg = get_vehicle_by_id(vid_agent)
+            if not vehicle_cfg and vehicle_meta:
+                vehicle_cfg = build_vehicle_from_meta(vid_agent, vehicle_meta)
+            elif not vehicle_cfg:
+                vehicle_cfg = get_vehicle_by_id("bmw-335i-2009")
 
             pids = snapshot.get("pids", {})
             agent_snapshot = {pid: vals["mean"] for pid, vals in pids.items()}
@@ -316,6 +337,7 @@ def _pipeline_generator(
                 vehicle_id=vid_agent,
                 snapshot=agent_snapshot,
                 scenario=f"web_ui:{Path(file_path).name}",
+                vehicle_override=vehicle_cfg,
             )
             output = run_diagnostic_agent(agent_input)
             agent_urgency = output.urgency
@@ -580,6 +602,93 @@ def get_library():
         })
 
     return JSONResponse(list(vehicles.values()))
+
+
+# ---------------------------------------------------------------------------
+# Analyze History endpoint
+# ---------------------------------------------------------------------------
+
+@app.get("/api/analyze-history/{vehicle_id}")
+async def analyze_history(vehicle_id: str):
+    """Fetch multi-session trend data for a vehicle and run an LLM longitudinal assessment."""
+    if not os.getenv("OPENAI_API_KEY"):
+        return JSONResponse({"error": "OpenAI API key not configured."}, status_code=503)
+
+    HISTORY_PIDS = [
+        "LTFT_B1", "STFT_B1", "LTFT_B2", "STFT_B2", "ECT", "IAT",
+        "AFR_B1", "BOOST_ACTUAL", "KNOCK_RETARD", "MAP", "CAT_TEMP_B1S1",
+        "RPM", "LOAD", "O2_LAMBDA_B1S1", "WGDC_B1",
+    ]
+
+    store = SessionStore(SESSION_DB)
+    trend_data = {}
+    for pid in HISTORY_PIDS:
+        pts = store.get_trend(vehicle_id=vehicle_id, pid=pid, limit=500)
+        if len(pts) >= 3:
+            vals = [p["mean"] for p in pts if p.get("mean") is not None]
+            if len(vals) >= 3:
+                first_date = (pts[0].get("recorded_at") or "")[:10]
+                last_date  = (pts[-1].get("recorded_at") or "")[:10]
+                drift = (vals[-1] - vals[0]) / len(vals)
+                trend_data[pid] = {
+                    "sessions":   len(pts),
+                    "mean":       round(sum(vals) / len(vals), 3),
+                    "min":        round(min(vals), 3),
+                    "max":        round(max(vals), 3),
+                    "latest":     round(vals[-1], 3),
+                    "drift_per_session": round(drift, 4),
+                    "date_range": f"{first_date} → {last_date}",
+                }
+
+    if not trend_data:
+        return JSONResponse({"error": f"No historical trend data found for vehicle '{vehicle_id}'."})
+
+    # Build vehicle context
+    vehicle_cfg = get_vehicle_by_id(vehicle_id)
+    vehicle_desc = (
+        f"{vehicle_cfg.year} {vehicle_cfg.make} {vehicle_cfg.model} ({vehicle_cfg.engine})"
+        if vehicle_cfg else vehicle_id
+    )
+
+    trend_summary = json.dumps(trend_data, indent=2)
+    system_prompt = (
+        "You are an expert automotive diagnostician. Your task is to analyze long-term OBD2 "
+        "signal trends for a vehicle across multiple driving sessions and identify patterns, "
+        "degradation, drift, or anomalies that may indicate developing faults.\n\n"
+        "For each signal, consider: is the current value healthy? Is there meaningful drift "
+        "over time? Are any values outside normal operating ranges? What systems are most "
+        "concerning? What should the owner watch or address?\n\n"
+        "Write a plain-language assessment the vehicle owner can understand. "
+        "Lead with the most important finding. Include an urgency tier: "
+        "CRITICAL / HIGH / MEDIUM / LOW / NORMAL."
+    )
+    user_message = (
+        f"Vehicle: {vehicle_desc}\n\n"
+        f"Long-term signal trends ({len(trend_data)} signals, multi-session):\n"
+        f"```json\n{trend_summary}\n```\n\n"
+        "Provide a longitudinal health assessment."
+    )
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=1024,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_message},
+            ],
+        )
+        assessment = response.choices[0].message.content or "(no response)"
+        urgency = "UNKNOWN"
+        for tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NORMAL"]:
+            if tier in assessment.upper():
+                urgency = tier
+                break
+        return JSONResponse({"urgency": urgency, "assessment": assessment, "vehicle_id": vehicle_id})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------------------------
@@ -1619,6 +1728,54 @@ function renderEnrich(d) {
     if (d.error) body += '<div style="color:var(--red);font-size:12px;margin-top:4px;">' + esc(d.error) + '</div>';
   } else {
     const vehicle = [d.year, d.make, d.model].filter(Boolean).join(' ');
+
+    // Build extra detail chips (drive type, country)
+    const extraChips = [
+      d.drive_type ? '<span class="chip chip-muted">' + esc(d.drive_type) + '</span>' : '',
+      d.plant_country ? '<span class="chip chip-muted">Made in ' + esc(d.plant_country) + '</span>' : '',
+    ].join('');
+
+    // Recalls section
+    let recallsHtml = '';
+    if (d.recalls && d.recalls.length > 0) {
+      const rows = d.recalls.map(r =>
+        '<div style="margin-bottom:10px;padding:8px 10px;background:rgba(220,38,38,0.08);border-left:3px solid var(--red);border-radius:4px;">' +
+          '<div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:3px;">' + esc(r.campaign || '') + ' &mdash; ' + esc(r.component || '') + '</div>' +
+          (r.summary ? '<div style="font-size:12px;color:#ccc;line-height:1.5;">' + esc(r.summary) + '</div>' : '') +
+          (r.consequence ? '<div style="font-size:11px;color:var(--orange);margin-top:3px;">Consequence: ' + esc(r.consequence) + '</div>' : '') +
+        '</div>'
+      ).join('');
+      recallsHtml =
+        '<div style="margin-top:12px;">' +
+          '<div style="font-size:12px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Active Recalls</div>' +
+          rows +
+        '</div>';
+    }
+
+    // Complaints section
+    let complaintsHtml = '';
+    if (d.complaints && d.complaints.length > 0) {
+      const rows = d.complaints.map(c =>
+        '<div style="margin-bottom:8px;padding:8px 10px;background:rgba(245,166,35,0.07);border-left:3px solid var(--orange);border-radius:4px;">' +
+          '<div style="font-size:11px;color:var(--orange);margin-bottom:3px;">' +
+            esc(c.component || 'Unspecified') +
+            (c.date ? ' &mdash; ' + esc(c.date) : '') +
+            (c.crash ? ' <span style="color:var(--red)">&#9888; Crash</span>' : '') +
+            (c.fire ? ' <span style="color:var(--red)">&#128293; Fire</span>' : '') +
+          '</div>' +
+          (c.summary ? '<div style="font-size:12px;color:#bbb;line-height:1.5;">' + esc(c.summary) + '</div>' : '') +
+        '</div>'
+      ).join('');
+      const totalCount = d.complaint_count || d.complaints.length;
+      complaintsHtml =
+        '<div style="margin-top:12px;">' +
+          '<div style="font-size:12px;font-weight:600;color:var(--orange);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">' +
+            'NHTSA Complaints (' + totalCount + ' total, showing top ' + d.complaints.length + ')' +
+          '</div>' +
+          rows +
+        '</div>';
+    }
+
     body =
       '<div class="stats-row">' +
         '<div class="stat-item"><div class="stat-val" style="color:var(--green);font-size:18px;">' + esc(vehicle || 'Unknown') + '</div><div class="stat-lbl">Vehicle</div></div>' +
@@ -1626,8 +1783,11 @@ function renderEnrich(d) {
       '<div class="tags">' +
         (d.engine ? '<span class="chip chip-muted">' + esc(d.engine) + '</span>' : '') +
         '<span class="chip ' + (d.recall_count > 0 ? 'chip-red' : 'chip-green') + '">' + (d.recall_count||0) + ' Recalls</span>' +
-        '<span class="chip chip-muted">' + (d.complaint_count||0) + ' NHTSA Complaints</span>' +
-      '</div>';
+        '<span class="chip ' + (d.complaint_count > 0 ? 'chip-orange' : 'chip-muted') + '">' + (d.complaint_count||0) + ' NHTSA Complaints</span>' +
+        extraChips +
+      '</div>' +
+      recallsHtml +
+      complaintsHtml;
   }
 
   el.innerHTML =
@@ -1931,7 +2091,14 @@ async function renderHistory(vehicleId) {
     '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">'
     + esc(vehicleId) + ' · ' + sessionSummary
     + ' · ' + active.length + ' signals with history</div>'
-    + '<div class="history-grid">' + cardsHtml + '</div>';
+    + '<div class="history-grid">' + cardsHtml + '</div>'
+    + '<div style="margin-top:20px;text-align:center;">'
+      + '<button id="analyzeHistoryBtn" onclick="analyzeHistory(' + JSON.stringify(vehicleId) + ')" '
+        + 'style="background:linear-gradient(135deg,#1a56db,#44ddff);color:#fff;border:none;'
+        + 'padding:10px 28px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;'
+        + 'letter-spacing:.03em;">&#128200; Analyze Full History</button>'
+    + '</div>'
+    + '<div id="historyAssessment"></div>';
 
   // Draw sparklines after DOM update
   requestAnimationFrame(() => {
@@ -1941,6 +2108,43 @@ async function renderHistory(vehicleId) {
       drawSparkline(canvas, r.points.map(p => p.mean), r.pid);
     });
   });
+}
+
+async function analyzeHistory(vehicleId) {
+  const btn = document.getElementById('analyzeHistoryBtn');
+  const out = document.getElementById('historyAssessment');
+  if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+  out.innerHTML = '<div style="color:var(--muted);font-size:13px;margin-top:16px;text-align:center;">Running longitudinal analysis…</div>';
+
+  try {
+    const resp = await fetch('/api/analyze-history/' + encodeURIComponent(vehicleId));
+    const data = await resp.json();
+    if (data.error) {
+      out.innerHTML = '<div style="color:var(--red);font-size:13px;margin-top:16px;">Error: ' + esc(data.error) + '</div>';
+    } else {
+      const urgencyColor = { CRITICAL:'var(--red)', HIGH:'var(--orange)', MEDIUM:'var(--orange)',
+                             LOW:'var(--blue)', NORMAL:'var(--green)', UNKNOWN:'var(--muted)' };
+      const urg = (data.urgency || 'UNKNOWN').toUpperCase();
+      const color = urgencyColor[urg] || 'var(--muted)';
+      const paragraphs = (data.assessment || '').split('\\n\\n').filter(Boolean);
+      const bodyHtml = paragraphs.map(p =>
+        '<p style="margin:0 0 12px;color:#dde;font-size:14px;line-height:1.7;">' +
+        esc(p).replace(/\\n/g, '<br>') + '</p>'
+      ).join('');
+      out.innerHTML =
+        '<div style="margin-top:20px;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;">'
+        + '<div style="padding:12px 20px;background:rgba(255,255,255,0.04);display:flex;align-items:center;gap:10px;">'
+          + '<span style="font-size:12px;font-weight:700;color:' + color + ';text-transform:uppercase;'
+            + 'padding:3px 10px;border:1px solid ' + color + ';border-radius:4px;">' + esc(urg) + '</span>'
+          + '<span style="font-size:13px;color:var(--muted);">Longitudinal AI Assessment &mdash; ' + esc(vehicleId) + '</span>'
+        + '</div>'
+        + '<div style="padding:16px 20px;font-family:\'Inter\',sans-serif;">' + bodyHtml + '</div>'
+        + '</div>';
+    }
+  } catch(e) {
+    out.innerHTML = '<div style="color:var(--red);font-size:13px;margin-top:16px;">Request failed: ' + esc(String(e)) + '</div>';
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '&#128200; Analyze Full History'; }
 }
 
 function drawSparkline(canvas, values, pid) {

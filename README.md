@@ -196,3 +196,43 @@ Traces go to both the personal Phoenix account and the instructor (Sravan/Euler)
 ## Prior Work
 
 The eval harness, vehicle configs, system prompts, and sample data evolved from a prior proof-of-concept ([obd2-vehicle-health-advisor](https://github.com/jomoglobal/obd2-vehicle-health-advisor)) built with Next.js, TypeScript, and GPT-4o. MisfireAI is a full Python rewrite with multi-source ingestion, MCP tools, and a production pipeline architecture.
+
+---
+
+## Roadmap
+
+### Part 2 — Capstone (due Jun 4)
+- [ ] Multi-agent architecture — triage agent + system-specialist agents (fueling, thermal, ignition)
+- [ ] Manufacturer PID config layer — extensible vehicle configs loaded from files, not hardcoded
+- [ ] Eval harness expansion — 10+ test cases covering lean/rich fault, stuck sensor, missing PIDs, multi-DTC conflict
+- [ ] RAG / ChromaDB vector store — session history searchable by symptom pattern
+- [ ] Session history API endpoints — expose `get_by_vehicle` and `get_trend` via FastAPI
+- [ ] Switch diagnostic agent from GPT-4o to Claude (align with eval harness already on Anthropic)
+
+### Near-term — Hardware & Infrastructure
+- [ ] Telegram HITL channel — approve/reject via Telegram bot; NL chat against session data
+- [ ] Cloud deploy — Railway or Fly.io; full pipeline accessible without local setup
+- [ ] Dataset hosting — external datasets on Supabase / Neon / Cloudflare for portable access across environments
+- [ ] Parquet + DuckDB — replace large CSVs with Parquet; query without loading full dataset into memory
+- [ ] Dragy OBD2 logger integration — 10–50Hz data acquisition when hardware arrives
+- [ ] MHD deep-data pipeline — full manufacturer PID access via MHD Orange Dongle (BMW-specific)
+- [ ] Mode 06 margin scoring — read raw monitor margins from ECM; catch developing faults before DTC is set
+- [ ] Proactive threshold alerts — notify owner when a PID crosses a user-defined limit
+
+### Hardware Builds
+- [ ] Live ELM327 Bluetooth streaming — real-time data acquisition from any ELM327-compatible adapter
+- [ ] ESP32 + CAN transceiver — DIY data logger (~$15–25); raw CAN decoding, OEM-specific PIDs, high-frequency logging (target: replicate Dragy capability)
+- [ ] Custom CAN decoder — learn OEM-specific PID mapping; decode manufacturer data without OBD2 protocol overhead
+
+### Platform Vision
+- [ ] Persistent vehicle profiles — full session history per vehicle; agent tracks changes over time
+- [ ] Always-on background monitoring — ingest data after every drive, runs silently
+- [ ] Multi-vehicle support — household monitors every car from one dashboard
+- [ ] Fleet manager mode — monitor a whole fleet from one place; comparative benchmarks across vehicles
+- [ ] Maintenance tracking — reminders based on actual usage data, not just odometer
+- [ ] Send report to mechanic — repair brief dispatched through the approval gate to a shop
+- [ ] WhatsApp / Telegram — get alerts and ask the agent questions without opening an app
+- [ ] Mobile PWA wrapper — installable on phone, works offline
+- [ ] Consumer app — accessible to any driver, not just enthusiasts
+- [ ] Insurance and warranty support — agent-generated evidence briefs for claims
+- [ ] Datronex parent platform — fleet and B2B tier at datronex.net
