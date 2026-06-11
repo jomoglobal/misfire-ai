@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
-from fastapi import FastAPI, Form, UploadFile, File
+from fastapi import FastAPI, Form, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 
 from tools.mcp_server import ingest_file, decode_vin, lookup_tsb, score_vehicle_health
@@ -29,7 +29,25 @@ from pipeline.vehicles import get_vehicle_by_id, build_vehicle_from_meta, list_v
 
 REPO_ROOT = Path(__file__).parent
 SESSION_DB = str(REPO_ROOT / "data" / "sessions.db")
-DEFAULT_SAMPLE = str(REPO_ROOT / "data" / "external" / "carOBD" / "obdiidata" / "drive1.csv")
+
+# Public demo sample — committed to the repo so it exists on a clean deploy.
+# The carOBD/external datasets are gitignored and absent on Railway, so the
+# demo must default to a file that ships with the repo.
+DEMO_SAMPLE = str(REPO_ROOT / "data" / "sample" / "2009-BMW-335i-2026-04-15 13-15-01.csv")
+DEMO_VIN = "WBAPN73579A395571"  # 2009 BMW 335i — pre-filled for the public demo
+
+# Local/dev default keeps the larger external dataset when present, but falls
+# back to the committed BMW sample so the app never points at a missing file.
+_LOCAL_SAMPLE = REPO_ROOT / "data" / "external" / "carOBD" / "obdiidata" / "drive1.csv"
+DEFAULT_SAMPLE = str(_LOCAL_SAMPLE) if _LOCAL_SAMPLE.exists() else DEMO_SAMPLE
+
+# DEMO_MODE locks the public deployment: upload disabled, BMW data forced,
+# rate guard active. Set DEMO_MODE=true on Railway; leave unset locally.
+DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("true", "1", "yes")
+
+# Rate guard tunables (only enforced when DEMO_MODE is on)
+DEMO_RUNS_PER_IP_PER_DAY = int(os.getenv("DEMO_RUNS_PER_IP_PER_DAY", "5"))
+DEMO_RUNS_GLOBAL_PER_DAY = int(os.getenv("DEMO_RUNS_GLOBAL_PER_DAY", "100"))
 
 app = FastAPI(title="MisfireAI")
 
@@ -453,11 +471,68 @@ def _pipeline_generator(
 
 
 # ---------------------------------------------------------------------------
+# Demo rate guard — in-memory, only enforced when DEMO_MODE is on.
+# Per-IP daily cap + global daily cap. Counters reset at UTC midnight and on
+# process restart (acceptable for a demo). No external store, no dependencies.
+# ---------------------------------------------------------------------------
+
+_rate_state: dict = {
+    "day": datetime.now(timezone.utc).date(),
+    "global_count": 0,
+    "per_ip": {},  # ip -> count for the current day
+}
+
+
+def _client_ip(request: Request) -> str:
+    """Resolve the real client IP behind Railway's proxy."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_check(request: Request) -> Optional[str]:
+    """Return an error message if this request exceeds a demo limit, else None."""
+    if not DEMO_MODE:
+        return None
+
+    today = datetime.now(timezone.utc).date()
+    if _rate_state["day"] != today:
+        _rate_state["day"] = today
+        _rate_state["global_count"] = 0
+        _rate_state["per_ip"] = {}
+
+    if _rate_state["global_count"] >= DEMO_RUNS_GLOBAL_PER_DAY:
+        return (
+            "The live demo has hit its daily limit. It resets at midnight UTC. "
+            "Clone the repo from GitHub to run it without limits."
+        )
+
+    ip = _client_ip(request)
+    ip_count = _rate_state["per_ip"].get(ip, 0)
+    if ip_count >= DEMO_RUNS_PER_IP_PER_DAY:
+        return (
+            f"You've reached the demo limit of {DEMO_RUNS_PER_IP_PER_DAY} runs per day. "
+            "It resets at midnight UTC. Clone the repo from GitHub to run it without limits."
+        )
+    return None
+
+
+def _rate_increment(request: Request) -> None:
+    if not DEMO_MODE:
+        return
+    ip = _client_ip(request)
+    _rate_state["global_count"] += 1
+    _rate_state["per_ip"][ip] = _rate_state["per_ip"].get(ip, 0) + 1
+
+
+# ---------------------------------------------------------------------------
 # API endpoints
 # ---------------------------------------------------------------------------
 
 @app.post("/api/analyze")
 async def analyze(
+    request: Request,
     file: Optional[UploadFile] = File(default=None),
     file_path: str = Form(default=""),
     vin: str = Form(default=""),
@@ -465,11 +540,24 @@ async def analyze(
     vehicle_id: str = Form(default=""),
     use_sample: str = Form(default="false"),
 ):
+    # Demo guard: enforce limits and lock inputs to the BMW sample.
+    if DEMO_MODE:
+        limit_msg = _rate_check(request)
+        if limit_msg:
+            return JSONResponse({"error": limit_msg}, status_code=429)
+        # Force the public demo to the committed BMW data — ignore any upload,
+        # library path, or arbitrary VIN the client tries to send.
+        use_sample = "true"
+        file = None
+        file_path = ""
+        email = ""
+        vin = DEMO_VIN
+
     use_sample_bool = use_sample.lower() in ("true", "1", "yes")
     cleanup = False
 
     if use_sample_bool:
-        resolved_path = DEFAULT_SAMPLE
+        resolved_path = DEMO_SAMPLE if DEMO_MODE else DEFAULT_SAMPLE
         if not os.path.exists(resolved_path):
             return JSONResponse({"error": f"Sample file not found: {resolved_path}"}, status_code=404)
     elif file_path:
@@ -490,6 +578,10 @@ async def analyze(
         return JSONResponse({"error": "No file uploaded and use_sample not set"}, status_code=400)
 
     file_path = resolved_path
+
+    # Count this run against the demo limits now that it's validated and
+    # about to execute (a real API spend is imminent).
+    _rate_increment(request)
 
     def gen():
         try:

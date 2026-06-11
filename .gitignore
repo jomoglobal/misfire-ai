@@ -22,3 +22,6 @@ build/
 .DS_Store
 Thumbs.db
 data/external/
+
+# Runtime session database — created on first run, not committed
+data/sessions.db
