@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MisfireAI — Deeper Diagnostics, Plain Language</title>
+  <!-- Plausible analytics — privacy-first, no cookies -->
+  <script defer data-domain="misfire.datronex.net" src="https://plausible.io/js/script.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -275,11 +277,29 @@
     .footer-links a:hover { color: var(--text); }
     .footer-copy { font-size: 12px; color: #444; }
 
+    /* ── DEV BANNER ── */
+    .dev-banner {
+      background: rgba(245,166,35,0.12);
+      border-bottom: 1px solid rgba(245,166,35,0.3);
+      color: var(--orange);
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 16px;
+      letter-spacing: 0.2px;
+    }
+    .dev-banner a { color: var(--orange); text-decoration: underline; }
+
     /* ── DIVIDER ── */
     .divider { height: 1px; background: var(--border); max-width: 1000px; margin: 0 auto; }
   </style>
 </head>
 <body>
+
+  <!-- DEV BANNER -->
+  <div class="dev-banner">
+    🚧 Active Development — Beta &nbsp;·&nbsp; <a href="https://github.com/jomoglobal/misfire-ai" target="_blank">Contribute on GitHub</a>
+  </div>
 
   <!-- NAV -->
   <nav>
@@ -287,7 +307,7 @@
     <div class="nav-links">
       <a href="#how-it-works">How It Works</a>
       <a href="#features">Features</a>
-      <a href="#contact" class="nav-cta">Request Demo</a>
+      <a href="https://web-production-7e200.up.railway.app/" target="_blank" class="nav-cta">Try Demo →</a>
     </div>
   </nav>
 
@@ -300,8 +320,8 @@
       scores it, and tells you what it means — before a warning light ever comes on.
     </p>
     <div class="hero-buttons">
-      <a href="https://github.com/jomoglobal/misfire-ai" target="_blank" class="btn-primary">View on GitHub</a>
-      <a href="#how-it-works" class="btn-secondary">See How It Works</a>
+      <a href="https://web-production-7e200.up.railway.app/" target="_blank" class="btn-primary">Try Live Demo →</a>
+      <a href="https://github.com/jomoglobal/misfire-ai" target="_blank" class="btn-secondary">View on GitHub</a>
     </div>
   </div>
 
