@@ -1426,7 +1426,7 @@ _UI_HTML = """<!DOCTYPE html>
 
     <div class="sidebar-section">
       <span class="sidebar-label">Recent Results</span>
-      <div class="sessions-list" id="sessionsList">
+      <div class="sessions-list" id="sessionsList" style="__HIDE_SESSIONS__">
         <div style="color:var(--muted);font-size:13px;">Loading...</div>
       </div>
     </div>
@@ -1667,7 +1667,14 @@ function startAnalysis() {
 
   let fetchPromise;
 
-  if (_libSelectedPath) {
+  if (SERVER_CONFIG.demo_mode) {
+    // Demo mode — server ignores file selection and forces BMW sample
+    const fd = new FormData();
+    fd.append('use_sample', 'true');
+    fd.append('vin', vin);
+    fd.append('email', email);
+    fetchPromise = fetch('/api/analyze', { method: 'POST', body: fd });
+  } else if (_libSelectedPath) {
     // Library file — send path to server, server reads it directly
     const fd = new FormData();
     fd.append('file_path', _libSelectedPath);
@@ -2627,12 +2634,14 @@ def root():
     if DEMO_MODE:
         html = html.replace("__HIDE_DROP__", "display:none")
         html = html.replace("__HIDE_LIB__", "display:none")
+        html = html.replace("__HIDE_SESSIONS__", "display:none")
         html = html.replace("__DEMO_VIN__", DEMO_VIN)
         html = html.replace("__VIN_READONLY__", "readonly")
-        html = html.replace("__RUN_BTN_STATE__", "")  # not disabled
+        html = html.replace("__RUN_BTN_STATE__", "")
     else:
         html = html.replace("__HIDE_DROP__", "")
         html = html.replace("__HIDE_LIB__", "")
+        html = html.replace("__HIDE_SESSIONS__", "")
         html = html.replace("__DEMO_VIN__", "")
         html = html.replace("__VIN_READONLY__", "")
         html = html.replace("__RUN_BTN_STATE__", "disabled")
