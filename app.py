@@ -1426,6 +1426,61 @@ _UI_HTML = """<!DOCTYPE html>
   .empty-title { font-size: 15px; font-weight: 600; color: var(--muted); }
   .empty-sub   { font-size: 13px; color: var(--muted); opacity: 0.7; max-width: 300px; line-height: 1.5; }
 
+  /* ── How it works hero ── */
+  .hero {
+    background: linear-gradient(180deg, #0d1117 0%, #111827 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 36px 24px 32px;
+    text-align: center;
+  }
+  .hero-headline {
+    font-size: 22px; font-weight: 700; color: var(--text);
+    letter-spacing: -0.3px; margin-bottom: 6px;
+  }
+  .hero-sub {
+    font-size: 14px; color: var(--muted); margin-bottom: 32px; line-height: 1.5;
+  }
+  .hero-steps {
+    display: flex; align-items: flex-start; justify-content: center;
+    gap: 0; max-width: 820px; margin: 0 auto;
+  }
+  .hero-step {
+    display: flex; flex-direction: column; align-items: center;
+    flex: 1; max-width: 180px; padding: 0 8px;
+  }
+  .hero-step svg { width: 88px; height: 88px; flex-shrink: 0; }
+  .hero-step-title {
+    font-size: 13px; font-weight: 700; color: var(--text);
+    margin: 12px 0 4px; line-height: 1.3;
+  }
+  .hero-step-sub {
+    font-size: 12px; color: var(--muted); line-height: 1.5;
+  }
+  .hero-arrow {
+    font-size: 20px; color: #30363d; margin-top: 44px; flex-shrink: 0;
+    padding: 0 2px;
+  }
+  .hero-value {
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+    margin-top: 28px; padding-top: 24px; border-top: 1px solid #1e2730;
+  }
+  .hero-value-chip {
+    background: #161b22; border: 1px solid #30363d;
+    border-radius: 20px; padding: 5px 14px;
+    font-size: 12px; color: var(--muted);
+  }
+  .hero-value-chip span { color: var(--blue); font-weight: 600; margin-right: 4px; }
+
+  @media (max-width: 760px) {
+    .hero { padding: 24px 16px 20px; }
+    .hero-headline { font-size: 18px; }
+    .hero-steps { flex-direction: column; align-items: center; gap: 8px; }
+    .hero-step { max-width: 260px; flex-direction: row; text-align: left; gap: 14px; }
+    .hero-step svg { width: 56px; height: 56px; }
+    .hero-arrow { display: none; }
+    .hero-step-title { margin-top: 0; }
+  }
+
   @media (max-width: 760px) {
     /* Let the whole page scroll naturally — no fixed-height clipping */
     body { min-height: 100vh; }
@@ -1650,6 +1705,151 @@ _UI_HTML = """<!DOCTYPE html>
 <div style="background:#1a3a1a;border-bottom:1px solid #2d5a2d;color:#a8d8a8;text-align:center;padding:8px 16px;font-size:13px;line-height:1.5;">
   This is a live demo on real vehicle data. Your own data would show findings specific to your car &mdash; fuel system drift, ignition wear, cooling degradation &mdash; before they become breakdowns.
 </div>
+
+<!-- How it works hero -->
+<section class="hero">
+  <div class="hero-headline">Your car is talking. Are you listening?</div>
+  <div class="hero-sub">Any driver can plug in a $30 OBD2 dongle and get AI-powered health reports — no mechanic needed.</div>
+
+  <div class="hero-steps">
+
+    <!-- Step 1: Plug it in -->
+    <div class="hero-step">
+      <svg viewBox="0 0 88 88" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Car body -->
+        <rect x="10" y="46" width="64" height="22" rx="5" fill="#1e2d40" stroke="#4a9eff" stroke-width="1.5"/>
+        <path d="M18 46 L26 32 L58 32 L68 46" fill="#1a2535" stroke="#4a9eff" stroke-width="1.5" stroke-linejoin="round"/>
+        <!-- Windows -->
+        <rect x="28" y="34" width="12" height="10" rx="2" fill="#0d1117" stroke="#4a9eff" stroke-width="1"/>
+        <rect x="44" y="34" width="12" height="10" rx="2" fill="#0d1117" stroke="#4a9eff" stroke-width="1"/>
+        <!-- Wheels -->
+        <circle cx="26" cy="68" r="7" fill="#0d1117" stroke="#4a9eff" stroke-width="1.5"/>
+        <circle cx="62" cy="68" r="7" fill="#0d1117" stroke="#4a9eff" stroke-width="1.5"/>
+        <circle cx="26" cy="68" r="3" fill="#1e2d40"/>
+        <circle cx="62" cy="68" r="3" fill="#1e2d40"/>
+        <!-- OBD2 port area -->
+        <rect x="12" y="52" width="8" height="5" rx="1" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <!-- Dongle being plugged in -->
+        <rect x="6" y="51" width="7" height="7" rx="2" fill="#4a9eff" opacity="0.9"/>
+        <line x1="3" y1="54.5" x2="6" y2="54.5" stroke="#4a9eff" stroke-width="2"/>
+        <!-- Plug arrow -->
+        <path d="M2 54.5 L5 52 M2 54.5 L5 57" stroke="#4a9eff" stroke-width="1.5" stroke-linecap="round"/>
+        <!-- Step number -->
+        <circle cx="74" cy="28" r="9" fill="#1e2d40" stroke="#4a9eff" stroke-width="1.5"/>
+        <text x="74" y="32" text-anchor="middle" font-size="11" font-weight="700" fill="#4a9eff">1</text>
+      </svg>
+      <div class="hero-step-title">Plug it in</div>
+      <div class="hero-step-sub">A $30–150 OBD2 dongle fits any car made after 1996. Takes 30 seconds.</div>
+    </div>
+
+    <div class="hero-arrow">›</div>
+
+    <!-- Step 2: Drive normally -->
+    <div class="hero-step">
+      <svg viewBox="0 0 88 88" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Road -->
+        <rect x="4" y="62" width="80" height="12" rx="3" fill="#1a2020" stroke="#30363d" stroke-width="1"/>
+        <line x1="22" y1="68" x2="32" y2="68" stroke="#f5a623" stroke-width="2" stroke-dasharray="4 4"/>
+        <line x1="38" y1="68" x2="48" y2="68" stroke="#f5a623" stroke-width="2" stroke-dasharray="4 4"/>
+        <line x1="54" y1="68" x2="64" y2="68" stroke="#f5a623" stroke-width="2" stroke-dasharray="4 4"/>
+        <!-- Car body moving -->
+        <rect x="18" y="38" width="52" height="20" rx="5" fill="#1e2d40" stroke="#3dba6f" stroke-width="1.5"/>
+        <path d="M26 38 L33 26 L57 26 L66 38" fill="#1a2535" stroke="#3dba6f" stroke-width="1.5" stroke-linejoin="round"/>
+        <!-- Windows -->
+        <rect x="35" y="28" width="10" height="8" rx="2" fill="#0d1117" stroke="#3dba6f" stroke-width="1"/>
+        <rect x="48" y="28" width="10" height="8" rx="2" fill="#0d1117" stroke="#3dba6f" stroke-width="1"/>
+        <!-- Wheels -->
+        <circle cx="32" cy="60" r="6" fill="#0d1117" stroke="#3dba6f" stroke-width="1.5"/>
+        <circle cx="60" cy="60" r="6" fill="#0d1117" stroke="#3dba6f" stroke-width="1.5"/>
+        <circle cx="32" cy="60" r="2.5" fill="#1e2d40"/>
+        <circle cx="60" cy="60" r="2.5" fill="#1e2d40"/>
+        <!-- Speed lines -->
+        <line x1="6" y1="38" x2="16" y2="38" stroke="#3dba6f" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+        <line x1="4" y1="44" x2="15" y2="44" stroke="#3dba6f" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+        <line x1="7" y1="50" x2="16" y2="50" stroke="#3dba6f" stroke-width="1.5" stroke-linecap="round" opacity="0.25"/>
+        <!-- Signal dots from dongle -->
+        <circle cx="22" cy="42" r="2" fill="#4a9eff" opacity="0.9"/>
+        <circle cx="22" cy="42" r="5" stroke="#4a9eff" stroke-width="1" opacity="0.4"/>
+        <circle cx="22" cy="42" r="8" stroke="#4a9eff" stroke-width="0.8" opacity="0.2"/>
+        <!-- Step number -->
+        <circle cx="76" cy="16" r="9" fill="#1a2520" stroke="#3dba6f" stroke-width="1.5"/>
+        <text x="76" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#3dba6f">2</text>
+      </svg>
+      <div class="hero-step-title">Drive normally</div>
+      <div class="hero-step-sub">Your dongle silently logs every sensor signal — RPM, fuel trims, timing, boost — at up to 50 readings per second.</div>
+    </div>
+
+    <div class="hero-arrow">›</div>
+
+    <!-- Step 3: Upload your log -->
+    <div class="hero-step">
+      <svg viewBox="0 0 88 88" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Phone outline -->
+        <rect x="28" y="12" width="32" height="56" rx="5" fill="#161b22" stroke="#e040fb" stroke-width="1.5"/>
+        <!-- Phone screen -->
+        <rect x="31" y="18" width="26" height="40" rx="2" fill="#0d1117"/>
+        <!-- Upload arrow on screen -->
+        <line x1="44" y1="46" x2="44" y2="30" stroke="#e040fb" stroke-width="2" stroke-linecap="round"/>
+        <path d="M38 36 L44 29 L50 36" stroke="#e040fb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- CSV file icon above phone -->
+        <rect x="36" y="50" width="16" height="4" rx="1" fill="#e040fb" opacity="0.3"/>
+        <text x="44" y="53.5" text-anchor="middle" font-size="5" fill="#e040fb" font-weight="700">CSV</text>
+        <!-- Home indicator -->
+        <rect x="40" y="63" width="8" height="2" rx="1" fill="#30363d"/>
+        <!-- WiFi/transfer arcs around phone -->
+        <path d="M22 38 Q22 22 28 22" stroke="#e040fb" stroke-width="1.2" stroke-linecap="round" opacity="0.5" fill="none"/>
+        <path d="M18 42 Q18 16 28 16" stroke="#e040fb" stroke-width="1" stroke-linecap="round" opacity="0.3" fill="none"/>
+        <!-- Step number -->
+        <circle cx="72" cy="16" r="9" fill="#1e1a2d" stroke="#e040fb" stroke-width="1.5"/>
+        <text x="72" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#e040fb">3</text>
+      </svg>
+      <div class="hero-step-title">Upload your log</div>
+      <div class="hero-step-sub">Connect your phone to the dongle app and export the CSV. Drop it here — takes seconds.</div>
+    </div>
+
+    <div class="hero-arrow">›</div>
+
+    <!-- Step 4: Get your report -->
+    <div class="hero-step">
+      <svg viewBox="0 0 88 88" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Report card -->
+        <rect x="14" y="14" width="60" height="62" rx="6" fill="#161b22" stroke="#f5a623" stroke-width="1.5"/>
+        <!-- Header bar -->
+        <rect x="14" y="14" width="60" height="14" rx="6" fill="#1e2d10"/>
+        <rect x="14" y="20" width="60" height="8" fill="#1e2d10"/>
+        <text x="44" y="24" text-anchor="middle" font-size="7" font-weight="700" fill="#f5a623">HEALTH REPORT</text>
+        <!-- Score circle -->
+        <circle cx="44" cy="44" r="13" fill="#0d1117" stroke="#f5a623" stroke-width="2"/>
+        <text x="44" y="48" text-anchor="middle" font-size="11" font-weight="700" fill="#f5a623">56%</text>
+        <!-- System bars -->
+        <text x="20" y="65" font-size="6" fill="#8b949e">Fuel</text>
+        <rect x="34" y="61" width="30" height="4" rx="2" fill="#1e2020"/>
+        <rect x="34" y="61" width="9" height="4" rx="2" fill="#ff4444"/>
+        <text x="20" y="73" font-size="6" fill="#8b949e">Ignition</text>
+        <rect x="34" y="69" width="30" height="4" rx="2" fill="#1e2020"/>
+        <rect x="34" y="69" width="17" height="4" rx="2" fill="#f5a623"/>
+        <!-- Sparkle / AI indicator -->
+        <circle cx="64" cy="32" r="6" fill="#1e2d10" stroke="#f5a623" stroke-width="1"/>
+        <text x="64" y="35" text-anchor="middle" font-size="8" fill="#f5a623">✦</text>
+        <!-- Step number -->
+        <circle cx="72" cy="16" r="9" fill="#2d1e00" stroke="#f5a623" stroke-width="1.5"/>
+        <text x="72" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#f5a623">4</text>
+      </svg>
+      <div class="hero-step-title">Get your report</div>
+      <div class="hero-step-sub">Plain-English health score, repair brief, and AI you can ask questions — all from your actual data. Every drive adds to your car's history.</div>
+    </div>
+
+  </div>
+
+  <!-- Value chips -->
+  <div class="hero-value">
+    <div class="hero-value-chip"><span>✦</span>Health score every drive</div>
+    <div class="hero-value-chip"><span>✦</span>Fuel trim &amp; knock detection</div>
+    <div class="hero-value-chip"><span>✦</span>Weeks of early warning</div>
+    <div class="hero-value-chip"><span>✦</span>Ask AI about your data</div>
+    <div class="hero-value-chip"><span>✦</span>History grows with every drive</div>
+  </div>
+</section>
 
 <!-- Top nav -->
 <nav class="topnav">
