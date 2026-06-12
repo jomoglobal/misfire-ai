@@ -1631,6 +1631,7 @@ dropzone.addEventListener('drop', e => {
 
 // ── Run Analysis ───────────────────────────────────────────────────────────
 runBtn.addEventListener('click', () => {
+  runBtnText.textContent = 'CLICKED';
   if (state.running) return;
   try {
     startAnalysis();
@@ -2601,25 +2602,7 @@ document.getElementById('trendVehicle').addEventListener('change', e => {
 });
 
 // __SERVER_CONFIG__
-// SERVER_CONFIG is injected at render time — no fetch needed
-(function applyDemoMode() {
-  if (!SERVER_CONFIG.demo_mode) return;
-  const dropSection = document.getElementById('dropSection');
-  const dropDivider = document.getElementById('dropDivider');
-  const libSection  = document.querySelector('.sidebar-section');
-  if (dropSection) dropSection.style.display = 'none';
-  if (dropDivider) dropDivider.style.display = 'none';
-  if (libSection)  libSection.style.display  = 'none';
-  const vinEl = document.getElementById('vinInput');
-  if (vinEl) { vinEl.value = SERVER_CONFIG.demo_vin; vinEl.readOnly = true; }
-  runBtn.disabled = false;
-  runBtnText.textContent = 'Run Analysis';
-  const notice = document.createElement('div');
-  notice.id = 'demoNotice';
-  notice.style.cssText = 'font-size:12px;color:var(--muted);padding:4px 0;text-align:center;';
-  notice.textContent = 'Demo mode — BMW 335i sample pre-loaded';
-  runBtn.parentNode.insertBefore(notice, runBtn);
-})();
+// Demo mode constraints are applied server-side in root() — nothing to do here.
 </script>
 
 </body>
