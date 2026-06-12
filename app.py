@@ -1636,7 +1636,7 @@ runBtn.addEventListener('click', () => {
   try {
     startAnalysis();
   } catch(e) {
-    alert('JS error: ' + e.message + '\n' + e.stack);
+    alert('JS error: ' + e.message + ' | ' + e.stack);
   }
 });
 
@@ -2243,7 +2243,7 @@ async function analyzeHistory(vehicleId) {
             + 'padding:3px 10px;border:1px solid ' + color + ';border-radius:4px;">' + esc(urg) + '</span>'
           + '<span style="font-size:13px;color:var(--muted);">Longitudinal AI Assessment &mdash; ' + esc(vehicleId) + '</span>'
         + '</div>'
-        + '<div style="padding:16px 20px;font-family:\'Inter\',sans-serif;">' + bodyHtml + '</div>'
+        + '<div style="padding:16px 20px;font-family:Inter,sans-serif;">' + bodyHtml + '</div>'
         + '</div>';
     }
   } catch(e) {
