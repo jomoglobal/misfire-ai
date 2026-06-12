@@ -1373,7 +1373,7 @@ _UI_HTML = """<!DOCTYPE html>
   <aside class="sidebar">
 
     <!-- Library picker -->
-    <div class="sidebar-section">
+    <div class="sidebar-section" style="__HIDE_LIB__">
       <span class="sidebar-label">Select from Library</span>
       <div class="field">
         <label for="libVehicle">Vehicle</label>
@@ -1390,13 +1390,13 @@ _UI_HTML = """<!DOCTYPE html>
     </div>
 
     <!-- Divider with label -->
-    <div id="dropDivider" style="display:flex;align-items:center;gap:8px">
+    <div id="dropDivider" style="display:flex;align-items:center;gap:8px;__HIDE_DROP__">
       <hr class="divider" style="flex:1;margin:0">
       <span style="font-size:11px;color:var(--muted);white-space:nowrap">or drop a new file</span>
       <hr class="divider" style="flex:1;margin:0">
     </div>
 
-    <div class="sidebar-section" id="dropSection">
+    <div class="sidebar-section" id="dropSection" style="__HIDE_DROP__">
       <div class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept=".csv">
         <div class="drop-icon">&#128196;</div>
@@ -1409,7 +1409,7 @@ _UI_HTML = """<!DOCTYPE html>
       <span class="sidebar-label">Options</span>
       <div class="field">
         <label for="vinInput">VIN (optional)</label>
-        <input type="text" id="vinInput" maxlength="17" placeholder="17-char VIN">
+        <input type="text" id="vinInput" maxlength="17" placeholder="17-char VIN" value="__DEMO_VIN__" __VIN_READONLY__>
       </div>
       <div class="field">
         <label for="emailInput">Owner Email (for HITL approval)</label>
@@ -1417,7 +1417,7 @@ _UI_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
-    <button class="btn btn-primary" id="runBtn" disabled>
+    <button class="btn btn-primary" id="runBtn" __RUN_BTN_STATE__>
       <div class="spinner" id="spinner"></div>
       <span id="runBtnText">Run Analysis</span>
     </button>
@@ -2624,4 +2624,16 @@ def root():
     import json as _json
     config_js = f"const SERVER_CONFIG = {_json.dumps({'demo_mode': DEMO_MODE, 'demo_vin': DEMO_VIN if DEMO_MODE else ''})};"
     html = _UI_HTML.replace("// __SERVER_CONFIG__", config_js)
+    if DEMO_MODE:
+        html = html.replace("__HIDE_DROP__", "display:none")
+        html = html.replace("__HIDE_LIB__", "display:none")
+        html = html.replace("__DEMO_VIN__", DEMO_VIN)
+        html = html.replace("__VIN_READONLY__", "readonly")
+        html = html.replace("__RUN_BTN_STATE__", "")  # not disabled
+    else:
+        html = html.replace("__HIDE_DROP__", "")
+        html = html.replace("__HIDE_LIB__", "")
+        html = html.replace("__DEMO_VIN__", "")
+        html = html.replace("__VIN_READONLY__", "")
+        html = html.replace("__RUN_BTN_STATE__", "disabled")
     return HTMLResponse(html)
