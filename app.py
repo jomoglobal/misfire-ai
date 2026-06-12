@@ -1599,7 +1599,7 @@ function setStage(stageId, status) {
 }
 
 // ── File input ─────────────────────────────────────────────────────────────
-fileInput.addEventListener('change', () => {
+if (fileInput) fileInput.addEventListener('change', () => {
   const f = fileInput.files[0];
   if (f) {
     state.selectedFile = f;
@@ -1611,9 +1611,9 @@ fileInput.addEventListener('change', () => {
   }
 });
 
-dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-dropzone.addEventListener('drop', e => {
+if (dropzone) dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+if (dropzone) dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+if (dropzone) dropzone.addEventListener('drop', e => {
   e.preventDefault();
   dropzone.classList.remove('dragover');
   const f = e.dataTransfer.files[0];
