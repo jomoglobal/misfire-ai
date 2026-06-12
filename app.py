@@ -1569,6 +1569,23 @@ _UI_HTML = """<!DOCTYPE html>
     border-radius: 10px; padding: 32px; text-align: center;
     color: var(--muted); font-size: 13px;
   }
+
+  .history-prompt-banner {
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 3px solid var(--blue);
+    border-radius: 10px; padding: 16px 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    flex-wrap: wrap;
+  }
+  .history-prompt-text { font-size: 13px; color: var(--text); }
+  .history-prompt-text strong { color: var(--blue); }
+  .history-prompt-link {
+    font-size: 13px; font-weight: 600; color: var(--blue);
+    background: none; border: 1px solid var(--blue); border-radius: 6px;
+    padding: 6px 14px; cursor: pointer; white-space: nowrap;
+    transition: background .15s;
+  }
+  .history-prompt-link:hover { background: rgba(74,158,255,0.1); }
 </style>
 </head>
 <body>
@@ -1698,6 +1715,9 @@ _UI_HTML = """<!DOCTYPE html>
     <div id="panelCompound" class="panel panel-compound" style="display:none"></div>
     <div id="panelHITL"     class="panel panel-hitl"     style="display:none"></div>
     <div id="panelHistory"  class="panel panel-history"  style="display:none"></div>
+
+    <!-- History entry point banner — injected after analysis if sessions exist -->
+    <div id="historyPromptBanner" style="display:none" class="history-prompt-banner"></div>
 
   </main>
 
@@ -1894,6 +1914,8 @@ function resetUI() {
   emptyState.style.display = 'none';
   pipelineBar.style.display = 'flex';
   errorBanner.classList.remove('visible');
+  const hpb = document.getElementById('historyPromptBanner');
+  if (hpb) hpb.style.display = 'none';
   ['catch','enrich','sep','compound'].forEach(s => setStage(s, null));
   ['panelCatch','panelEnrich','panelSeparate','panelCompound','panelHITL','panelHistory'].forEach(id => {
     const el = document.getElementById(id);
@@ -1998,7 +2020,7 @@ function handleStageEvent(evt) {
     case 'catch':    renderCatch(data);    setStage('catch', 'done'); setStage('enrich', 'active'); break;
     case 'enrich':   renderEnrich(data);   setStage('enrich', 'done'); setStage('sep', 'active'); break;
     case 'separate': renderSeparate(data); setStage('sep', 'done'); setStage('compound', 'active'); break;
-    case 'compound': renderCompound(data); setStage('compound', 'done'); break;
+    case 'compound': renderCompound(data); setStage('compound', 'done'); showHistoryPromptIfAvailable(); break;
     case 'hitl':     if (data.triggered) renderHITL(data); break;
     case 'done':     break;
     case 'error':    showError('[' + (data.stage || '?') + '] ' + data.message); setRunning(false); break;
@@ -2632,6 +2654,35 @@ setStage('catch', null);
 // ── Tab switching ──────────────────────────────────────────────────────────
 const analyzeView = document.getElementById('mainArea');
 const trendsView  = document.getElementById('trendsView');
+
+// ── History entry point banner ──────────────────────────────────────────────
+async function showHistoryPromptIfAvailable() {
+  const banner = document.getElementById('historyPromptBanner');
+  if (!banner) return;
+  banner.style.display = 'none';
+
+  const vehicleId = SERVER_CONFIG.demo_mode ? 'IJE0S' : (state.vin || '');
+  if (!vehicleId) return;
+
+  try {
+    const res = await fetch('https://' + location.hostname + '/api/trends/' + encodeURIComponent(vehicleId) + '/health?limit=1');
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return;
+
+    // Get actual count
+    const cntRes = await fetch('https://' + location.hostname + '/api/vehicles');
+    const vehicles = await cntRes.json();
+    const veh = vehicles.find(v => v.vehicle_id === vehicleId);
+    const count = veh ? veh.session_count : data.length;
+
+    banner.innerHTML =
+      '<div class="history-prompt-text">This vehicle has <strong>' + count + ' sessions</strong> in MisfireAI history.</div>'
+      + '<button class="history-prompt-link" onclick="switchTab(&quot;trends&quot;)">See full trend analysis &#8594;</button>';
+    banner.style.display = 'flex';
+  } catch(e) {
+    // silently skip — banner is bonus, not required
+  }
+}
 
 function switchTab(tab) {
   document.getElementById('tabAnalyze').classList.toggle('active', tab === 'analyze');
