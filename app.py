@@ -1672,11 +1672,12 @@ function startAnalysis() {
 
   if (SERVER_CONFIG.demo_mode) {
     // Demo mode — server ignores file selection and forces BMW sample
+    // Use absolute HTTPS URL — relative fetch fails when page loads over HTTP
     const fd = new FormData();
     fd.append('use_sample', 'true');
     fd.append('vin', vin);
     fd.append('email', email);
-    fetchPromise = fetch('/api/analyze', { method: 'POST', body: fd });
+    fetchPromise = fetch('https://' + location.hostname + '/api/analyze', { method: 'POST', body: fd });
   } else if (_libSelectedPath) {
     // Library file — send path to server, server reads it directly
     const fd = new FormData();
@@ -1685,7 +1686,7 @@ function startAnalysis() {
     fd.append('email', email);
     fd.append('vehicle_id', vid);
     fd.append('use_sample', 'false');
-    fetchPromise = fetch('/api/analyze', { method: 'POST', body: fd });
+    fetchPromise = fetch('https://' + location.hostname + '/api/analyze', { method: 'POST', body: fd });
   } else if (state.selectedFile) {
     const fd = new FormData();
     fd.append('file', state.selectedFile);
@@ -1693,7 +1694,7 @@ function startAnalysis() {
     fd.append('email', email);
     fd.append('vehicle_id', vid);
     fd.append('use_sample', 'false');
-    fetchPromise = fetch('/api/analyze', { method: 'POST', body: fd });
+    fetchPromise = fetch('https://' + location.hostname + '/api/analyze', { method: 'POST', body: fd });
   } else {
     showError('Select a vehicle and log file from the library, or drop a CSV file.');
     setRunning(false);
@@ -2022,7 +2023,7 @@ function showError(msg) {
 // ── Sessions sidebar ───────────────────────────────────────────────────────
 async function loadSessions() {
   try {
-    const resp = await fetch('/api/sessions');
+    const resp = await fetch('https://' + location.hostname + '/api/sessions');
     const sessions = await resp.json();
     renderSessionsList(sessions.slice(0, 5));
   } catch(e) {
@@ -2052,7 +2053,7 @@ function renderSessionsList(sessions) {
 
 async function loadSession(sessionId) {
   try {
-    const resp = await fetch('/api/sessions/' + sessionId);
+    const resp = await fetch('https://' + location.hostname + '/api/sessions/' + sessionId);
     const rec = await resp.json();
     if (rec.error) { showError(rec.error); return; }
     renderStoredSession(rec);
@@ -2143,7 +2144,7 @@ async function renderHistory(vehicleId) {
   // Fetch all PIDs in parallel
   const results = await Promise.all(
     HISTORY_PIDS.map(pid =>
-      fetch('/api/trends/' + encodeURIComponent(vehicleId) + '/' + encodeURIComponent(pid))
+      fetch('https://' + location.hostname + '/api/trends/' + encodeURIComponent(vehicleId) + '/' + encodeURIComponent(pid))
         .then(r => r.json())
         .then(pts => ({ pid, points: pts }))
         .catch(() => ({ pid, points: [] }))
@@ -2219,7 +2220,7 @@ async function analyzeHistory(vehicleId) {
   out.innerHTML = '<div style="color:var(--muted);font-size:13px;margin-top:16px;text-align:center;">Running longitudinal analysis…</div>';
 
   try {
-    const resp = await fetch('/api/analyze-history/' + encodeURIComponent(vehicleId));
+    const resp = await fetch('https://' + location.hostname + '/api/analyze-history/' + encodeURIComponent(vehicleId));
     const data = await resp.json();
     if (data.error) {
       out.innerHTML = '<div style="color:var(--red);font-size:13px;margin-top:16px;">Error: ' + esc(data.error) + '</div>';
@@ -2312,7 +2313,7 @@ let _libSelectedPath = '';
 
 async function loadLibrary() {
   try {
-    const res  = await fetch('/api/library');
+    const res  = await fetch('https://' + location.hostname + '/api/library');
     _library   = await res.json();
     const sel  = document.getElementById('libVehicle');
     sel.innerHTML = '<option value="">— select a vehicle —</option>';
@@ -2401,7 +2402,7 @@ async function loadVehicleGrid() {
   const grid = document.getElementById('vehicleGrid');
   const sel  = document.getElementById('trendVehicle');
   try {
-    const res  = await fetch('/api/vehicles');
+    const res  = await fetch('https://' + location.hostname + '/api/vehicles');
     const list = await res.json();
     grid.innerHTML = '';
     sel.innerHTML  = '<option value="">— select a vehicle —</option>';
@@ -2450,7 +2451,7 @@ async function loadTrend() {
   });
 
   try {
-    const res    = await fetch('/api/trends/' + encodeURIComponent(vid) + '/' + encodeURIComponent(pid));
+    const res    = await fetch('https://' + location.hostname + '/api/trends/' + encodeURIComponent(vid) + '/' + encodeURIComponent(pid));
     const points = await res.json();
 
     if (!Array.isArray(points) || points.length === 0) {
