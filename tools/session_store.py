@@ -10,6 +10,7 @@ Uses only stdlib: sqlite3, json, uuid, datetime.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -137,6 +138,57 @@ _CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_recorded_at ON sessions (recorded_at)",
     "CREATE INDEX IF NOT EXISTS idx_source ON sessions (source)",
 ]
+
+_CREATE_VISIT_TABLE = """
+CREATE TABLE IF NOT EXISTS visit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    visited_at  TEXT NOT NULL,
+    ip_hash     TEXT NOT NULL,
+    user_agent  TEXT
+)
+"""
+
+_CREATE_VISIT_INDEX = "CREATE INDEX IF NOT EXISTS idx_visit_date ON visit_log (visited_at)"
+
+
+def log_visit(db_path: str, ip: str, user_agent: str) -> None:
+    """Record a page visit. IP is one-way hashed — never stored raw."""
+    ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
+    visited_at = datetime.now(timezone.utc).isoformat()
+    os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(_CREATE_VISIT_TABLE)
+        conn.execute(_CREATE_VISIT_INDEX)
+        conn.execute(
+            "INSERT INTO visit_log (visited_at, ip_hash, user_agent) VALUES (?, ?, ?)",
+            (visited_at, ip_hash, user_agent[:200] if user_agent else ""),
+        )
+
+
+def get_visit_stats(db_path: str, days: int = 30) -> dict:
+    """Return visit counts: total hits and unique IPs per day for the last N days."""
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute(_CREATE_VISIT_TABLE)
+        conn.execute(_CREATE_VISIT_INDEX)
+        rows = conn.execute(
+            """
+            SELECT substr(visited_at, 1, 10) AS day,
+                   COUNT(*)                  AS hits,
+                   COUNT(DISTINCT ip_hash)   AS unique_ips
+            FROM visit_log
+            WHERE visited_at >= datetime('now', ? || ' days')
+            GROUP BY day
+            ORDER BY day DESC
+            """,
+            (f"-{days}",),
+        ).fetchall()
+        total = conn.execute("SELECT COUNT(*), COUNT(DISTINCT ip_hash) FROM visit_log").fetchone()
+    return {
+        "total_hits": total[0],
+        "total_unique_ips": total[1],
+        "days": [dict(r) for r in rows],
+    }
 
 _UPSERT = """
 INSERT INTO sessions (

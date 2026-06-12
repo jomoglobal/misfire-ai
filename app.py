@@ -24,7 +24,7 @@ from fastapi import FastAPI, Form, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 
 from tools.mcp_server import ingest_file, decode_vin, lookup_tsb, score_vehicle_health
-from tools.session_store import SessionStore, SessionRecord, parse_mhd_filename
+from tools.session_store import SessionStore, SessionRecord, parse_mhd_filename, log_visit, get_visit_stats
 from pipeline.vehicles import get_vehicle_by_id, build_vehicle_from_meta, list_vehicle_ids
 
 REPO_ROOT = Path(__file__).parent
@@ -3333,6 +3333,17 @@ def config():
     return {"demo_mode": DEMO_MODE, "demo_vin": DEMO_VIN if DEMO_MODE else ""}
 
 
+# Token-protected visitor stats — not linked from UI, not in public docs.
+# Set ADMIN_TOKEN env var to a secret value; requests must include ?token=<value>.
+@app.get("/admin/visits")
+def admin_visits(token: str = "", days: int = 30):
+    admin_token = os.getenv("ADMIN_TOKEN", "")
+    if not admin_token or token != admin_token:
+        from fastapi.responses import Response as _R
+        return _R(status_code=403, content="Forbidden")
+    return JSONResponse(get_visit_stats(SESSION_DB, days=min(days, 365)))
+
+
 @app.get("/test", response_class=HTMLResponse)
 def test_page():
     return HTMLResponse("""<!DOCTYPE html>
@@ -3343,9 +3354,19 @@ def test_page():
 
 
 @app.get("/", response_class=HTMLResponse)
-def root():
+def root(request: Request):
     import json as _json
     from fastapi.responses import Response as _Response
+    # Log visit silently — hashed IP only, never stored raw
+    try:
+        client_ip = (
+            request.headers.get("cf-connecting-ip")   # Cloudflare real IP
+            or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or (request.client.host if request.client else "unknown")
+        )
+        log_visit(SESSION_DB, client_ip, request.headers.get("user-agent", ""))
+    except Exception:
+        pass  # never let logging break the page
     config_js = f"const SERVER_CONFIG = {_json.dumps({'demo_mode': DEMO_MODE, 'demo_vin': DEMO_VIN if DEMO_MODE else ''})};"
     html = _UI_HTML.replace("// __SERVER_CONFIG__", config_js)
     if DEMO_MODE:
