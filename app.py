@@ -2313,9 +2313,6 @@ async function loadLibrary() {
       opt.textContent = v.vehicle_id + '  (' + avail + ' files)';
       sel.appendChild(opt);
     });
-    // If demo mode config already arrived, auto-select now; otherwise the
-    // config fetch callback will call this after it sets _demoConfig.
-    applyDemoLibrarySelection();
   } catch(e) {
     document.getElementById('libVehicle').innerHTML =
       '<option value="">Failed to load — ' + e.message + '</option>';
@@ -2591,48 +2588,32 @@ document.getElementById('trendVehicle').addEventListener('change', e => {
   });
 });
 
-// Apply demo-mode UI constraints once config + library are both loaded
-let _demoConfig = null;
-
+// Apply demo-mode UI constraints — no library dependency
 fetch('/config').then(r => r.json()).then(cfg => {
-  _demoConfig = cfg;
   if (!cfg.demo_mode) return;
-  // Hide drop zone and its divider immediately — no dependency on library
+  // Hide drop zone and its divider
   const dropSection = document.getElementById('dropSection');
   const dropDivider = document.getElementById('dropDivider');
   if (dropSection) dropSection.style.display = 'none';
   if (dropDivider) dropDivider.style.display = 'none';
+  // Hide the library picker — irrelevant in demo mode (server ignores it)
+  const libSection = document.querySelector('.sidebar-section');
+  if (libSection) libSection.style.display = 'none';
   // Pre-fill VIN read-only
   const vinEl = document.getElementById('vinInput');
   if (vinEl) { vinEl.value = cfg.demo_vin; vinEl.readOnly = true; }
+  // Enable Run Analysis immediately — server forces BMW sample regardless
+  runBtn.disabled = false;
+  runBtnText.textContent = 'Run Analysis';
   // Demo notice above Run Analysis
   const notice = document.createElement('div');
-  notice.id = 'demoNotice';
   notice.style.cssText = 'font-size:12px;color:var(--muted);padding:4px 0;text-align:center;';
   notice.textContent = 'Demo mode — BMW 335i sample pre-loaded';
-  const rb = document.getElementById('runBtn');
-  if (rb && !document.getElementById('demoNotice')) rb.parentNode.insertBefore(notice, rb);
-  // Auto-select first vehicle+file so Run Analysis becomes enabled
-  applyDemoLibrarySelection();
-});
-
-function applyDemoLibrarySelection() {
-  if (!_demoConfig || !_demoConfig.demo_mode || !_library || !_library.length) return;
-  const sel = document.getElementById('libVehicle');
-  if (!sel || sel.options.length < 2) return; // library not populated yet
-  // Pick the first vehicle that has available files
-  const vehicle = _library.find(v => v.sessions && v.sessions.some(s => s.available));
-  if (!vehicle) return;
-  sel.value = vehicle.vehicle_id;
-  onLibVehicleChange();
-  // Auto-select first available file
-  const fsel = document.getElementById('libFile');
-  const firstFile = vehicle.sessions.find(s => s.available);
-  if (fsel && firstFile) {
-    fsel.value = firstFile.file_path;
-    onLibFileChange(); // this sets _libSelectedPath and enables runBtn
+  if (!document.getElementById('demoNotice')) {
+    notice.id = 'demoNotice';
+    runBtn.parentNode.insertBefore(notice, runBtn);
   }
-}
+});
 </script>
 
 </body>
