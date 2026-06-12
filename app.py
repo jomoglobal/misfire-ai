@@ -1646,6 +1646,11 @@ _UI_HTML = """<!DOCTYPE html>
 </head>
 <body>
 
+<!-- Demo banner -->
+<div style="background:#1a3a1a;border-bottom:1px solid #2d5a2d;color:#a8d8a8;text-align:center;padding:8px 16px;font-size:13px;line-height:1.5;">
+  This is a live demo on real vehicle data. Your own data would show findings specific to your car &mdash; fuel system drift, ignition wear, cooling degradation &mdash; before they become breakdowns.
+</div>
+
 <!-- Top nav -->
 <nav class="topnav">
   <div class="logo-mark">M</div>
