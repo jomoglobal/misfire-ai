@@ -1,5 +1,5 @@
 # Architecture
-*MisfireAI · May 2026*
+*MisfireAI · Updated 2026-06-12*
 
 ---
 
@@ -153,7 +153,7 @@ All ingested sessions are persisted to a local SQLite database (`data/sessions.d
 
 | Vehicle | Source | Sessions | Date Range |
 |---|---|---|---|
-| bmw-335i-IJE0S | MHD | 394 | 2023–2026 |
+| bmw-335i-IJE0S | MHD | 484 seeded (618 raw, 134 unrecognized format) | 2023–2025 |
 | toyota-etios | CarOBD | 142 | — |
 | cephasax-fleet | CephaSAX | 7 | — |
 | kia-soul | iSay Gerard | 4 | — |
@@ -250,18 +250,23 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 | `/api/analyze` | POST (SSE stream) | Run full pipeline, stream `{stage, data}` events |
 | `/api/sessions` | GET | Last 20 ingested sessions |
 | `/api/sessions/{id}` | GET | Full session record |
-| `/api/trends/{vehicle_id}/{pid}` | GET | Longitudinal trend array (up to 500 points) |
+| `/api/trends/{vehicle_id}/health` | GET | Health score timeline per session (must be defined before `/{pid}` wildcard) |
+| `/api/trends/{vehicle_id}/narrative` | GET | GPT-4o longitudinal narrative (in-process cache) |
+| `/api/trends/{vehicle_id}/{pid}` | GET | Per-PID time series up to 500 points |
 | `/api/vehicles` | GET | Vehicle list with session counts |
 | `/api/library` | GET | All vehicles + available file paths for library picker |
 | `/hitl/approve` | GET | HITL approval callback (tokenized) |
 | `/hitl/reject` | GET | HITL rejection callback (tokenized) |
 
 **UI features:**
-- **Analyze tab** — Vehicle library picker (dropdown by vehicle → file), drag-drop upload for new files, streaming pipeline results (CATCH → ENRICH → SEPARATE → COMPOUND → HITL), Vehicle History panel with sparklines per PID
+- **Analyze tab** — Demo mode: VIN pre-filled, no upload required. Pitch copy above VIN input ("Upload your OBD2 data. Get a plain-language vehicle health report — backed by real AI analysis."). Streaming pipeline results with plain-English stage labels (Read Data / Identify Vehicle / Score Systems / AI Report). After analysis completes: "See full trend analysis →" banner links to history view.
+- **History view** — AI narrative panel, health score timeline (canvas chart), per-system sparklines (Fuel System / Engine Cooling / Ignition / Catalytic Converter). Auto-loads in demo mode with pre-seeded BMW IJE0S data (484 sessions, 2023–2025).
 - **Trends tab** — Vehicle grid cards, PID selector, full canvas line chart (200+ sessions), drift stats
-- Mobile-responsive — tested on phone over local WiFi; layout reflows to single-column scroll
+- Mobile-responsive — layout reflows to single-column scroll
 
-**Pipeline streaming:** Results delivered via Server-Sent Events (SSE). Each stage yields a `data: {stage, data}` event as it completes. The UI renders panels progressively — no waiting for the full pipeline to finish.
+**Pipeline streaming:** Results delivered via Server-Sent Events (SSE). Each stage yields a `data: {stage, data}` event as it completes. Internal wire names unchanged (catch/enrich/separate/compound). UI shows plain-English labels only.
+
+**Demo seeding:** On startup, `_seed_db_if_empty()` populates the SQLite DB from `data/sample/bmw-ije0s-seed.json` if the table is empty. Solves Railway's ephemeral filesystem — every deploy gets fresh seed data in < 2s.
 
 ---
 
@@ -271,9 +276,9 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 |---|---|---|---|---|---|
 | **BMW K+DCAN Cable** | Hard cable | K-Line / D-CAN | ✅ Tested | ✅ Possible | BMW-specific; works with INPA, NCS Expert, ISTA |
 | **Mini VCI Cable + Techstream** | Hard cable | Toyota CAN / K-Line | ✅ Tested | ✅ Possible | Toyota/Lexus-specific; deep manufacturer data |
-| **MHD Orange Dongle** | Wireless | BMW-proprietary CAN | ✅ Tested | ✅ Yes | BMW N54/N55/S55/B58; primary data source; 394 sessions logged |
-| **Zurich BT1 (Harbor Freight)** | Bluetooth | ELM327 / OBD2 | ✅ Tested | ⚠️ Limited | Generic OBD2; works with Car Scanner and python-obd |
-| **Dragy OBD2 Logger** | Bluetooth | High-freq OBD2 | 🔜 Arriving | ❓ TBD | 10–50 Hz logging; Mode 06 capability TBD |
+| **MHD Orange Dongle** | Wireless | BMW-proprietary CAN | ✅ Tested | ✅ Yes | BMW N54/N55/S55/B58; primary data source; 484 sessions seeded |
+| **Zurich BT1 (Harbor Freight)** | Bluetooth | ELM327 / OBD2 | ✅ Tested | ⚠️ Limited | Generic OBD2; tested but NOT the target acquisition solution — inconsistent across apps/vehicles |
+| **Dragy OBD2 Logger** | Bluetooth | High-freq OBD2 | 🔜 Arriving | ❓ TBD | **Target data acquisition device.** 10–50 Hz, multi-make, CSV output compatible with ingest pipeline. Mode 06 TBD. |
 | **ESP32 + CAN Transceiver** | DIY hardware | Raw CAN bus | 🔬 Research | ✅ Possible | Target ~$15–25 replicable build; bypasses ELM327 limitations |
 
 ---

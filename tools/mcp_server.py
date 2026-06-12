@@ -353,12 +353,42 @@ def lookup_tsb(vin: str, symptom: str = "", dtc: str = "") -> str:
     vin = vin.strip().upper()
     results: dict[str, Any] = {"vin": vin, "symptom": symptom, "dtc": dtc}
 
-    # NHTSA recalls by VIN
+    # Decode VIN first — needed for both recall fallback and complaints lookup
+    make, model, year = "", "", ""
+    try:
+        vin_url = f"https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/{vin}?format=json"
+        with urllib.request.urlopen(vin_url, timeout=10) as resp:
+            vin_data = json.loads(resp.read().decode())
+        vin_fields = {r["Variable"]: r["Value"] for r in vin_data.get("Results", []) if r.get("Value")}
+        make  = vin_fields.get("Make", "").upper()
+        model = vin_fields.get("Model", "").upper()
+        year  = vin_fields.get("Model Year", "")
+    except Exception:
+        pass
+
+    # NHTSA recalls — try VIN-specific first, fall back to make/model/year
+    # The VIN endpoint only works if NHTSA registered the specific VIN during a recall campaign.
+    # Most real-world VINs return 0 even when the vehicle is affected. The make/model/year
+    # endpoint is the reliable source for whether a vehicle model has open recalls.
     try:
         recall_url = f"https://api.nhtsa.gov/recalls/recallsByVehicleId?vin={vin}"
         with urllib.request.urlopen(recall_url, timeout=10) as resp:
             recall_data = json.loads(resp.read().decode())
         recalls = recall_data.get("results", [])
+
+        # Fall back to make/model/year if VIN lookup returned nothing but we have decoded info
+        if not recalls and make and model and year:
+            fallback_url = (
+                f"https://api.nhtsa.gov/recalls/recallsByVehicle"
+                f"?make={urllib.parse.quote(make)}&model={urllib.parse.quote(model)}&modelYear={year}"
+            )
+            with urllib.request.urlopen(fallback_url, timeout=10) as resp:
+                fallback_data = json.loads(resp.read().decode())
+            recalls = fallback_data.get("results", [])
+            results["recall_source"] = "make_model_year"
+        else:
+            results["recall_source"] = "vin"
+
         results["recalls"] = [
             {
                 "campaign":    r.get("NHTSACampaignNumber", ""),
@@ -376,13 +406,6 @@ def lookup_tsb(vin: str, symptom: str = "", dtc: str = "") -> str:
 
     # NHTSA complaints — filter by keyword if symptom provided
     try:
-        vin_url = f"https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/{vin}?format=json"
-        with urllib.request.urlopen(vin_url, timeout=10) as resp:
-            vin_data = json.loads(resp.read().decode())
-        vin_fields = {r["Variable"]: r["Value"] for r in vin_data.get("Results", []) if r.get("Value")}
-        make  = vin_fields.get("Make", "").upper()
-        model = vin_fields.get("Model", "").upper()
-        year  = vin_fields.get("Model Year", "")
 
         if make and model and year:
             complaints_url = (

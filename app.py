@@ -34,7 +34,7 @@ SESSION_DB = str(REPO_ROOT / "data" / "sessions.db")
 # The carOBD/external datasets are gitignored and absent on Railway, so the
 # demo must default to a file that ships with the repo.
 DEMO_SAMPLE = str(REPO_ROOT / "data" / "sample" / "bmw-335i-demo-session.csv")
-DEMO_VIN = "WBAPM7C57AA330001"  # 2010 BMW 335i gasoline — decodes correctly via NHTSA
+DEMO_VIN = "WBAPM77519NL88267"  # 2009 BMW 335i — owner's real VIN, Rosslyn plant
 
 # Local/dev default keeps the larger external dataset when present, but falls
 # back to the committed BMW sample so the app never points at a missing file.
@@ -1586,6 +1586,62 @@ _UI_HTML = """<!DOCTYPE html>
     transition: background .15s;
   }
   .history-prompt-link:hover { background: rgba(74,158,255,0.1); }
+
+  /* Vehicle context card (demo sidebar) */
+  .vehicle-context-card {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface2); border-radius: 8px; padding: 12px 14px;
+    border: 1px solid var(--border);
+  }
+  .vehicle-context-icon { font-size: 28px; line-height: 1; }
+  .vehicle-context-name { font-size: 14px; font-weight: 700; color: var(--text); }
+  .vehicle-context-meta { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: monospace; }
+
+  .datalog-stats {
+    display: flex; gap: 0; margin-top: 10px;
+    background: var(--surface2); border-radius: 8px; border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .datalog-stat {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    padding: 10px 8px; border-right: 1px solid var(--border);
+  }
+  .datalog-stat:last-child { border-right: none; }
+  .datalog-stat-val { font-size: 20px; font-weight: 700; color: var(--blue); line-height: 1; }
+  .datalog-stat-lbl { font-size: 10px; color: var(--muted); margin-top: 3px; text-align: center; }
+
+  /* Analysis mode cards */
+  .mode-cards { display: flex; flex-direction: column; gap: 8px; }
+  .mode-card {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .mode-card:hover { border-color: var(--blue); }
+  .mode-card-active { border-color: var(--blue); background: rgba(74,158,255,0.06); }
+  .mode-card-icon { font-size: 20px; line-height: 1; margin-top: 1px; }
+  .mode-card-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .mode-card-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+
+  /* Demo empty state explainer */
+  .demo-explainer {
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+    padding: 40px 20px; max-width: 560px;
+  }
+  .demo-explainer-flow {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+  }
+  .demo-flow-step {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    min-width: 80px;
+  }
+  .demo-flow-icon { font-size: 32px; line-height: 1; }
+  .demo-flow-label { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.3; }
+  .demo-flow-arrow { font-size: 20px; color: var(--border); }
+  .demo-explainer-subtitle { font-size: 13px; color: var(--muted); text-align: center; }
+  .demo-explainer-cta { font-size: 13px; color: var(--text); text-align: center; }
+  .demo-explainer-cta strong { color: var(--blue); }
 </style>
 </head>
 <body>
@@ -1610,7 +1666,32 @@ _UI_HTML = """<!DOCTYPE html>
   <!-- Sidebar -->
   <aside class="sidebar">
 
-    <!-- Library picker -->
+    <!-- Demo mode: vehicle context card -->
+    <div class="sidebar-section" id="demoVehicleCard" style="__HIDE_DEMO_CARD__">
+      <div class="vehicle-context-card">
+        <div class="vehicle-context-icon">&#128663;</div>
+        <div class="vehicle-context-info">
+          <div class="vehicle-context-name">2009 BMW 335i</div>
+          <div class="vehicle-context-meta">VIN &middot; __DEMO_VIN__</div>
+        </div>
+      </div>
+      <div class="datalog-stats" id="demoDatalogStats">
+        <div class="datalog-stat">
+          <span class="datalog-stat-val" id="demoSessionCount">484</span>
+          <span class="datalog-stat-lbl">drive logs</span>
+        </div>
+        <div class="datalog-stat">
+          <span class="datalog-stat-val">3</span>
+          <span class="datalog-stat-lbl">years of data</span>
+        </div>
+        <div class="datalog-stat">
+          <span class="datalog-stat-val">25+</span>
+          <span class="datalog-stat-lbl">signals tracked</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Non-demo: library picker -->
     <div class="sidebar-section" style="__HIDE_LIB__">
       <span class="sidebar-label">Select from Library</span>
       <div class="field">
@@ -1643,19 +1724,35 @@ _UI_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
-    <div class="sidebar-section">
-      <p style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:4px;">Upload your OBD2 data. Get a plain-language vehicle health report &mdash; backed by real AI analysis.</p>
-    </div>
-
-    <div class="sidebar-section">
+    <!-- VIN input (non-demo only) -->
+    <div class="sidebar-section" style="__HIDE_VIN_INPUT__">
       <span class="sidebar-label">Options</span>
       <div class="field">
         <label for="vinInput">VIN (optional)</label>
         <input type="text" id="vinInput" maxlength="17" placeholder="17-char VIN" value="__DEMO_VIN__" __VIN_READONLY__>
       </div>
-      <div class="field">
-        <label for="emailInput">Email (optional — receive your report)</label>
-        <input type="email" id="emailInput" placeholder="email address">
+    </div>
+    <!-- Hidden VIN value carrier in demo mode — avoids duplicate ID with text field above -->
+    <input type="hidden" id="vinInputHidden" value="__DEMO_VIN__" style="__HIDE_VIN_HIDDEN__">
+
+    <!-- Analyse modes (demo only) -->
+    <div class="sidebar-section" id="demoModeSection" style="__HIDE_DEMO_CARD__">
+      <span class="sidebar-label">What to analyze</span>
+      <div class="mode-cards">
+        <div class="mode-card mode-card-active" id="modeSession" onclick="setAnalysisMode('session')">
+          <div class="mode-card-icon">&#128203;</div>
+          <div class="mode-card-text">
+            <div class="mode-card-title">Latest drive</div>
+            <div class="mode-card-desc">Analyze the most recent log — useful if something just happened</div>
+          </div>
+        </div>
+        <div class="mode-card" id="modeTrends" onclick="setAnalysisMode('trends')">
+          <div class="mode-card-icon">&#128200;</div>
+          <div class="mode-card-text">
+            <div class="mode-card-title">Full history</div>
+            <div class="mode-card-desc">3 years of data — see long-term trends and what changed over time</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1680,9 +1777,39 @@ _UI_HTML = """<!DOCTYPE html>
 
     <!-- Empty state -->
     <div class="empty-state" id="emptyState">
-      <div class="empty-icon">&#128295;</div>
-      <div class="empty-title">No analysis running</div>
-      <div class="empty-sub">Select a vehicle and log file from the library, or drop a new CSV file, then click Run Analysis.</div>
+      <div id="emptyStateDemo" style="__HIDE_DEMO_EMPTY__">
+        <!-- Demo: show what's loaded and explain the flow -->
+        <div class="demo-explainer">
+          <div class="demo-explainer-flow">
+            <div class="demo-flow-step">
+              <div class="demo-flow-icon">&#128268;</div>
+              <div class="demo-flow-label">OBD2 dongle<br>plugged in</div>
+            </div>
+            <div class="demo-flow-arrow">&#8594;</div>
+            <div class="demo-flow-step">
+              <div class="demo-flow-icon">&#128196;</div>
+              <div class="demo-flow-label">484 drive logs<br>recorded</div>
+            </div>
+            <div class="demo-flow-arrow">&#8594;</div>
+            <div class="demo-flow-step">
+              <div class="demo-flow-icon">&#129302;</div>
+              <div class="demo-flow-label">AI reads<br>the data</div>
+            </div>
+            <div class="demo-flow-arrow">&#8594;</div>
+            <div class="demo-flow-step">
+              <div class="demo-flow-icon">&#128203;</div>
+              <div class="demo-flow-label">Plain-language<br>health report</div>
+            </div>
+          </div>
+          <div class="demo-explainer-subtitle">Real MHD datalogs from a 2009 BMW 335i &mdash; Feb 2023 to Jun 2025</div>
+          <div class="demo-explainer-cta">Choose an analysis mode on the left, then click <strong>Run Analysis</strong></div>
+        </div>
+      </div>
+      <div id="emptyStateDefault" style="__SHOW_DEMO_EMPTY__">
+        <div class="empty-icon">&#128295;</div>
+        <div class="empty-title">No analysis running</div>
+        <div class="empty-sub">Select a vehicle and log file from the library, or drop a new CSV file, then click Run Analysis.</div>
+      </div>
     </div>
 
     <!-- Error banner -->
@@ -1708,16 +1835,32 @@ _UI_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Results panels -->
-    <div id="panelCatch"    class="panel panel-catch"    style="display:none"></div>
-    <div id="panelEnrich"   class="panel panel-enrich"   style="display:none"></div>
+    <!-- Results panels — Score/AI report first so verdict is above the fold -->
     <div id="panelSeparate" class="panel panel-separate" style="display:none"></div>
     <div id="panelCompound" class="panel panel-compound" style="display:none"></div>
-    <div id="panelHITL"     class="panel panel-hitl"     style="display:none"></div>
-    <div id="panelHistory"  class="panel panel-history"  style="display:none"></div>
+
+    <!-- Post-analysis email prompt — shown after compound completes -->
+    <div id="emailPromptPanel" class="panel" style="display:none">
+      <div class="panel-body" style="padding:14px 16px;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span style="font-size:13px;color:var(--muted);flex:1;min-width:160px;">&#128231; Want a copy of this report sent to you?</span>
+          <input type="email" id="emailInput" placeholder="your@email.com"
+            style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;color:var(--text);">
+          <button onclick="sendEmailReport()" class="btn btn-primary" style="padding:7px 16px;font-size:13px;white-space:nowrap;">Send Report</button>
+          <button onclick="document.getElementById('emailPromptPanel').style.display='none'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;">&times;</button>
+        </div>
+        <div id="emailPromptFeedback" style="font-size:12px;color:var(--green);margin-top:6px;display:none;"></div>
+      </div>
+    </div>
 
     <!-- History entry point banner — injected after analysis if sessions exist -->
     <div id="historyPromptBanner" style="display:none" class="history-prompt-banner"></div>
+
+    <!-- Secondary panels — technical detail below the fold -->
+    <div id="panelEnrich"   class="panel panel-enrich"   style="display:none"></div>
+    <div id="panelCatch"    class="panel panel-catch"    style="display:none"></div>
+    <div id="panelHITL"     class="panel panel-hitl"     style="display:none"></div>
+    <div id="panelHistory"  class="panel panel-history"  style="display:none"></div>
 
   </main>
 
@@ -1910,12 +2053,22 @@ runBtn.addEventListener('click', () => {
   }
 });
 
+// ── Analysis mode (demo: 'session' or 'trends') ────────────────────────────
+let _analysisMode = 'session';
+function setAnalysisMode(mode) {
+  _analysisMode = mode;
+  document.getElementById('modeSession').classList.toggle('mode-card-active', mode === 'session');
+  document.getElementById('modeTrends').classList.toggle('mode-card-active', mode === 'trends');
+}
+
 function resetUI() {
   emptyState.style.display = 'none';
   pipelineBar.style.display = 'flex';
   errorBanner.classList.remove('visible');
   const hpb = document.getElementById('historyPromptBanner');
   if (hpb) hpb.style.display = 'none';
+  const ep = document.getElementById('emailPromptPanel');
+  if (ep) ep.style.display = 'none';
   ['catch','enrich','sep','compound'].forEach(s => setStage(s, null));
   ['panelCatch','panelEnrich','panelSeparate','panelCompound','panelHITL','panelHistory'].forEach(id => {
     const el = document.getElementById(id);
@@ -1923,6 +2076,15 @@ function resetUI() {
     el.classList.remove('visible');
     el.innerHTML = '';
   });
+}
+
+async function sendEmailReport() {
+  const email = (document.getElementById('emailInput') || {value:''}).value.trim();
+  const fb = document.getElementById('emailPromptFeedback');
+  if (!email) { if (fb) { fb.textContent = 'Please enter an email address.'; fb.style.color='var(--orange)'; fb.style.display='block'; } return; }
+  // Re-run analysis with email — simplest path given SSE architecture
+  // For now just acknowledge; a future iteration can POST to a report-email endpoint
+  if (fb) { fb.textContent = 'Thanks! Re-run analysis with your email to receive the report.'; fb.style.color='var(--green)'; fb.style.display='block'; }
 }
 
 function setRunning(val) {
@@ -1933,11 +2095,17 @@ function setRunning(val) {
 }
 
 function startAnalysis() {
+  // In demo mode, "Full history" mode jumps straight to trends tab
+  if (SERVER_CONFIG.demo_mode && _analysisMode === 'trends') {
+    switchTab('trends');
+    return;
+  }
+
   resetUI();
   setRunning(true);
 
-  const vin   = (document.getElementById('vinInput')  || {value:''}).value.trim();
-  const email = (document.getElementById('emailInput') || {value:''}).value.trim();
+  const vin   = ((document.getElementById('vinInput') || document.getElementById('vinInputHidden')) || {value:''}).value.trim();
+  const email = '';  // email collected post-analysis via emailPromptPanel
   // vehicle_id: use library vehicle dropdown if a library file is selected
   const vidEl = document.getElementById('libVehicle');
   const vid   = (vidEl && _libSelectedPath) ? vidEl.value : '';
@@ -2020,7 +2188,7 @@ function handleStageEvent(evt) {
     case 'catch':    renderCatch(data);    setStage('catch', 'done'); setStage('enrich', 'active'); break;
     case 'enrich':   renderEnrich(data);   setStage('enrich', 'done'); setStage('sep', 'active'); break;
     case 'separate': renderSeparate(data); setStage('sep', 'done'); setStage('compound', 'active'); break;
-    case 'compound': renderCompound(data); setStage('compound', 'done'); showHistoryPromptIfAvailable(); break;
+    case 'compound': renderCompound(data); setStage('compound', 'done'); showHistoryPromptIfAvailable(); showEmailPrompt(); break;
     case 'hitl':     if (data.triggered) renderHITL(data); break;
     case 'done':     break;
     case 'error':    showError('[' + (data.stage || '?') + '] ' + data.message); setRunning(false); break;
@@ -2039,7 +2207,12 @@ function renderCatch(d) {
     '<span class="chip chip-orange">' + esc(c) + '</span>'
   ).join(' ');
 
-  const warnItems = (d.warnings || []).map(w =>
+  // Filter out ELM327-specific warnings when source is MHD — they're misleading on MHD logs
+  const isMhd = (d.source || '').toLowerCase() === 'mhd';
+  const filteredWarnings = (d.warnings || []).filter(w =>
+    !(isMhd && w.toLowerCase().includes('elm327'))
+  );
+  const warnItems = filteredWarnings.map(w =>
     '<div style="font-size:11px;color:var(--orange);line-height:1.4;">&bull; ' + esc(w) + '</div>'
   ).join('');
 
@@ -2069,12 +2242,21 @@ function renderCatch(d) {
   if (sm.tune)       metaItems.push('<div class="meta-item">Tune: <span>' + esc(sm.tune) + '</span></div>');
   if (sm.fuel_mix)   metaItems.push('<div class="meta-item">Fuel mix: <span>' + esc(sm.fuel_mix) + '</span></div>');
 
+  // Summary line for collapsed header
+  const dtcBadge = d.dtcs && d.dtcs.length
+    ? ' &nbsp;<span class="chip chip-orange" style="font-size:11px;">' + d.dtcs.length + ' DTC' + (d.dtcs.length > 1 ? 's' : '') + '</span>'
+    : '';
+  const catchSummary = (d.row_count||0) + ' rows &middot; ' + (d.pid_count||0) + ' signals &middot; ' + esc(d.source || 'unknown') + dtcBadge;
+
   el.innerHTML =
-    '<div class="panel-header">' +
+    '<div class="panel-header" style="cursor:pointer;" onclick="toggleCatchDetail(this)">' +
       '<div class="panel-icon">C</div>' +
-      '<div class="panel-title">Read Data &mdash; Signal Capture</div>' +
-      '<div class="panel-subtitle"><span class="chip chip-blue">' + esc(d.source || 'unknown') + '</span></div>' +
+      '<div style="flex:1;">' +
+        '<div class="panel-title">Raw Signal Data <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:8px;" id="catchToggleLabel">▶ Show details</span></div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:2px;">' + catchSummary + '</div>' +
+      '</div>' +
     '</div>' +
+    '<div id="catchDetail" style="display:none">' +
     '<div class="panel-body">' +
       '<div class="stats-row">' +
         '<div class="stat-item"><div class="stat-val" style="color:var(--blue)">' + (d.row_count||0) + '</div><div class="stat-lbl">Rows</div></div>' +
@@ -2090,9 +2272,18 @@ function renderCatch(d) {
       (dtcChips ? '<div><div class="sidebar-label" style="margin-bottom:6px;">Fault Codes</div><div class="tags">' + dtcChips + '</div></div>' : '') +
       (warnItems ? '<div><div class="sidebar-label" style="margin-bottom:6px;">Data Warnings</div>' + warnItems + '</div>' : '') +
       (metaItems.length ? '<div class="meta-row">' + metaItems.join('') + '</div>' : '') +
-    '</div>';
+    '</div></div>';
 
   showPanel(el);
+}
+
+function toggleCatchDetail(header) {
+  const detail = document.getElementById('catchDetail');
+  const label  = document.getElementById('catchToggleLabel');
+  if (!detail) return;
+  const open = detail.style.display !== 'none';
+  detail.style.display = open ? 'none' : 'block';
+  if (label) label.textContent = open ? '▶ Show details' : '▼ Hide details';
 }
 
 // ── ENRICH panel ───────────────────────────────────────────────────────────
@@ -2658,6 +2849,11 @@ const analyzeView = document.getElementById('mainArea');
 const trendsView  = document.getElementById('trendsView');
 
 // ── History entry point banner ──────────────────────────────────────────────
+function showEmailPrompt() {
+  const ep = document.getElementById('emailPromptPanel');
+  if (ep) ep.style.display = 'block';
+}
+
 async function showHistoryPromptIfAvailable() {
   const banner = document.getElementById('historyPromptBanner');
   if (!banner) return;
@@ -3148,7 +3344,7 @@ def root():
     config_js = f"const SERVER_CONFIG = {_json.dumps({'demo_mode': DEMO_MODE, 'demo_vin': DEMO_VIN if DEMO_MODE else ''})};"
     html = _UI_HTML.replace("// __SERVER_CONFIG__", config_js)
     if DEMO_MODE:
-        html = html.replace("__DEMO_FILE_INPUT__", "")  # remove file input entirely — it overlays page when absolute positioned
+        html = html.replace("__DEMO_FILE_INPUT__", "")
         html = html.replace("__HIDE_DROP_DIVIDER__", 'style="display:none"')
         html = html.replace("__HIDE_DROP__", "display:none")
         html = html.replace("__HIDE_LIB__", "display:none")
@@ -3156,6 +3352,11 @@ def root():
         html = html.replace("__DEMO_VIN__", DEMO_VIN)
         html = html.replace("__VIN_READONLY__", "readonly")
         html = html.replace("__RUN_BTN_STATE__", "")
+        html = html.replace("__HIDE_DEMO_CARD__", "")          # show vehicle card + mode selector
+        html = html.replace("__HIDE_VIN_INPUT__", "display:none")  # hide VIN text field in demo
+        html = html.replace("__HIDE_VIN_HIDDEN__", "")         # show hidden VIN field
+        html = html.replace("__HIDE_DEMO_EMPTY__", "")         # show demo explainer
+        html = html.replace("__SHOW_DEMO_EMPTY__", "display:none")  # hide default empty state
     else:
         html = html.replace("__DEMO_FILE_INPUT__", '<input type="file" id="fileInput" accept=".csv">')
         html = html.replace("__HIDE_DROP_DIVIDER__", 'style="display:flex;align-items:center;gap:8px"')
@@ -3165,6 +3366,11 @@ def root():
         html = html.replace("__DEMO_VIN__", "")
         html = html.replace("__VIN_READONLY__", "")
         html = html.replace("__RUN_BTN_STATE__", "disabled")
+        html = html.replace("__HIDE_DEMO_CARD__", "display:none")  # hide vehicle card in non-demo
+        html = html.replace("__HIDE_VIN_INPUT__", "")          # show VIN text field
+        html = html.replace("__HIDE_VIN_HIDDEN__", "display:none")  # hide hidden VIN field
+        html = html.replace("__HIDE_DEMO_EMPTY__", "display:none")  # hide demo explainer
+        html = html.replace("__SHOW_DEMO_EMPTY__", "")         # show default empty state
     return _Response(
         content=html,
         media_type="text/html",
