@@ -1538,6 +1538,11 @@ _UI_HTML = """<!DOCTYPE html>
 window.onerror = function(msg, src, line, col, err) {
   document.body.insertAdjacentHTML('afterbegin', '<div style="position:fixed;top:0;left:0;right:0;background:red;color:white;padding:10px;z-index:99999;font-size:13px;">JS ERROR line ' + line + ': ' + msg + '</div>');
 };
+document.addEventListener('DOMContentLoaded', function() {
+  var btn = document.getElementById('runBtn');
+  if (!btn) { alert('runBtn not found'); return; }
+  btn.addEventListener('click', function() { alert('DIRECT CLICK WORKS'); });
+});
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   selectedFile: null,
