@@ -2629,6 +2629,7 @@ def config():
 @app.get("/", response_class=HTMLResponse)
 def root():
     import json as _json
+    from fastapi.responses import Response as _Response
     config_js = f"const SERVER_CONFIG = {_json.dumps({'demo_mode': DEMO_MODE, 'demo_vin': DEMO_VIN if DEMO_MODE else ''})};"
     html = _UI_HTML.replace("// __SERVER_CONFIG__", config_js)
     if DEMO_MODE:
@@ -2647,4 +2648,8 @@ def root():
         html = html.replace("__DEMO_VIN__", "")
         html = html.replace("__VIN_READONLY__", "")
         html = html.replace("__RUN_BTN_STATE__", "disabled")
-    return HTMLResponse(html)
+    return _Response(
+        content=html,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
+    )
