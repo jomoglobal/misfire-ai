@@ -2617,6 +2617,15 @@ def config():
     return {"demo_mode": DEMO_MODE, "demo_vin": DEMO_VIN if DEMO_MODE else ""}
 
 
+@app.get("/test", response_class=HTMLResponse)
+def test_page():
+    return HTMLResponse("""<!DOCTYPE html>
+<html><body>
+<h1>test</h1>
+<button onclick="this.textContent='WORKS'">click me</button>
+</body></html>""")
+
+
 @app.get("/", response_class=HTMLResponse)
 def root():
     import json as _json
