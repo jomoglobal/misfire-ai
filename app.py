@@ -22,7 +22,6 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from fastapi import FastAPI, Form, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 from tools.mcp_server import ingest_file, decode_vin, lookup_tsb, score_vehicle_health
 from tools.session_store import SessionStore, SessionRecord, parse_mhd_filename
@@ -51,8 +50,6 @@ DEMO_RUNS_PER_IP_PER_DAY = int(os.getenv("DEMO_RUNS_PER_IP_PER_DAY", "5"))
 DEMO_RUNS_GLOBAL_PER_DAY = int(os.getenv("DEMO_RUNS_GLOBAL_PER_DAY", "100"))
 
 app = FastAPI(title="MisfireAI")
-if DEMO_MODE:
-    app.add_middleware(HTTPSRedirectMiddleware)
 
 
 # ---------------------------------------------------------------------------
