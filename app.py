@@ -1739,7 +1739,7 @@ _UI_HTML = """<!DOCTYPE html>
         <text x="74" y="32" text-anchor="middle" font-size="11" font-weight="700" fill="#4a9eff">1</text>
       </svg>
       <div class="hero-step-title">Plug it in</div>
-      <div class="hero-step-sub">A $30–150 OBD2 dongle fits any car made after 1996. Takes 30 seconds.</div>
+      <div class="hero-step-sub">An OBD2 dongle fits any car made after 1996. Takes 30 seconds.</div>
     </div>
 
     <div class="hero-arrow">›</div>
@@ -1788,12 +1788,13 @@ _UI_HTML = """<!DOCTYPE html>
         <rect x="28" y="12" width="32" height="56" rx="5" fill="#161b22" stroke="#e040fb" stroke-width="1.5"/>
         <!-- Phone screen -->
         <rect x="31" y="18" width="26" height="40" rx="2" fill="#0d1117"/>
-        <!-- Upload arrow on screen -->
-        <line x1="44" y1="46" x2="44" y2="30" stroke="#e040fb" stroke-width="2" stroke-linecap="round"/>
-        <path d="M38 36 L44 29 L50 36" stroke="#e040fb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <!-- CSV file icon above phone -->
-        <rect x="36" y="50" width="16" height="4" rx="1" fill="#e040fb" opacity="0.3"/>
-        <text x="44" y="53.5" text-anchor="middle" font-size="5" fill="#e040fb" font-weight="700">CSV</text>
+        <!-- Sync/wireless arcs on screen -->
+        <path d="M36 44 Q44 36 52 44" stroke="#e040fb" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        <path d="M38 48 Q44 42 50 48" stroke="#e040fb" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        <circle cx="44" cy="51" r="2" fill="#e040fb"/>
+        <!-- MisfireAI label on screen -->
+        <text x="44" y="30" text-anchor="middle" font-size="5" fill="#8b949e">MisfireAI</text>
+        <rect x="35" y="32" width="18" height="3" rx="1" fill="#e040fb" opacity="0.25"/>
         <!-- Home indicator -->
         <rect x="40" y="63" width="8" height="2" rx="1" fill="#30363d"/>
         <!-- WiFi/transfer arcs around phone -->
@@ -1803,8 +1804,8 @@ _UI_HTML = """<!DOCTYPE html>
         <circle cx="72" cy="16" r="9" fill="#1e1a2d" stroke="#e040fb" stroke-width="1.5"/>
         <text x="72" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#e040fb">3</text>
       </svg>
-      <div class="hero-step-title">Upload your log</div>
-      <div class="hero-step-sub">Connect your phone to the dongle app and export the CSV. Drop it here — takes seconds.</div>
+      <div class="hero-step-title">Open the app</div>
+      <div class="hero-step-sub">Open MisfireAI on your phone or browser. Your data syncs automatically — nothing to export or transfer.</div>
     </div>
 
     <div class="hero-arrow">›</div>
