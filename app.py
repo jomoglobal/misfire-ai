@@ -1390,7 +1390,7 @@ _UI_HTML = """<!DOCTYPE html>
     </div>
 
     <!-- Divider with label -->
-    <div id="dropDivider" style="display:flex;align-items:center;gap:8px;__HIDE_DROP__">
+    <div id="dropDivider" __HIDE_DROP_DIVIDER__>
       <hr class="divider" style="flex:1;margin:0">
       <span style="font-size:11px;color:var(--muted);white-space:nowrap">or drop a new file</span>
       <hr class="divider" style="flex:1;margin:0">
@@ -2632,6 +2632,7 @@ def root():
     config_js = f"const SERVER_CONFIG = {_json.dumps({'demo_mode': DEMO_MODE, 'demo_vin': DEMO_VIN if DEMO_MODE else ''})};"
     html = _UI_HTML.replace("// __SERVER_CONFIG__", config_js)
     if DEMO_MODE:
+        html = html.replace("__HIDE_DROP_DIVIDER__", 'style="display:none"')
         html = html.replace("__HIDE_DROP__", "display:none")
         html = html.replace("__HIDE_LIB__", "display:none")
         html = html.replace("__HIDE_SESSIONS__", "display:none")
@@ -2639,6 +2640,7 @@ def root():
         html = html.replace("__VIN_READONLY__", "readonly")
         html = html.replace("__RUN_BTN_STATE__", "")
     else:
+        html = html.replace("__HIDE_DROP_DIVIDER__", 'style="display:flex;align-items:center;gap:8px"')
         html = html.replace("__HIDE_DROP__", "")
         html = html.replace("__HIDE_LIB__", "")
         html = html.replace("__HIDE_SESSIONS__", "")
