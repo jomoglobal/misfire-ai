@@ -1632,7 +1632,11 @@ dropzone.addEventListener('drop', e => {
 // ── Run Analysis ───────────────────────────────────────────────────────────
 runBtn.addEventListener('click', () => {
   if (state.running) return;
-  startAnalysis();
+  try {
+    startAnalysis();
+  } catch(e) {
+    alert('JS error: ' + e.message + '\n' + e.stack);
+  }
 });
 
 function resetUI() {
