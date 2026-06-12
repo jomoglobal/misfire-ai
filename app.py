@@ -1535,14 +1535,7 @@ _UI_HTML = """<!DOCTYPE html>
 </div><!-- /layout -->
 
 <script>
-window.onerror = function(msg, src, line, col, err) {
-  document.body.insertAdjacentHTML('afterbegin', '<div style="position:fixed;top:0;left:0;right:0;background:red;color:white;padding:10px;z-index:99999;font-size:13px;">JS ERROR line ' + line + ': ' + msg + '</div>');
-};
-document.addEventListener('DOMContentLoaded', function() {
-  var btn = document.getElementById('runBtn');
-  if (!btn) { alert('runBtn not found'); return; }
-  btn.addEventListener('click', function() { alert('DIRECT CLICK WORKS'); });
-});
+// __SERVER_CONFIG__
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   selectedFile: null,
@@ -1639,7 +1632,6 @@ if (dropzone) dropzone.addEventListener('drop', e => {
 
 // ── Run Analysis ───────────────────────────────────────────────────────────
 runBtn.addEventListener('click', () => {
-  runBtnText.textContent = 'CLICKED';
   if (state.running) return;
   try {
     startAnalysis();
@@ -2609,7 +2601,6 @@ document.getElementById('trendVehicle').addEventListener('change', e => {
   });
 });
 
-// __SERVER_CONFIG__
 // Demo mode constraints are applied server-side in root() — nothing to do here.
 </script>
 
