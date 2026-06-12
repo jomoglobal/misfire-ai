@@ -2588,32 +2588,26 @@ document.getElementById('trendVehicle').addEventListener('change', e => {
   });
 });
 
-// Apply demo-mode UI constraints — no library dependency
-fetch('/config').then(r => r.json()).then(cfg => {
-  if (!cfg.demo_mode) return;
-  // Hide drop zone and its divider
+// __SERVER_CONFIG__
+// SERVER_CONFIG is injected at render time — no fetch needed
+(function applyDemoMode() {
+  if (!SERVER_CONFIG.demo_mode) return;
   const dropSection = document.getElementById('dropSection');
   const dropDivider = document.getElementById('dropDivider');
+  const libSection  = document.querySelector('.sidebar-section');
   if (dropSection) dropSection.style.display = 'none';
   if (dropDivider) dropDivider.style.display = 'none';
-  // Hide the library picker — irrelevant in demo mode (server ignores it)
-  const libSection = document.querySelector('.sidebar-section');
-  if (libSection) libSection.style.display = 'none';
-  // Pre-fill VIN read-only
+  if (libSection)  libSection.style.display  = 'none';
   const vinEl = document.getElementById('vinInput');
-  if (vinEl) { vinEl.value = cfg.demo_vin; vinEl.readOnly = true; }
-  // Enable Run Analysis immediately — server forces BMW sample regardless
+  if (vinEl) { vinEl.value = SERVER_CONFIG.demo_vin; vinEl.readOnly = true; }
   runBtn.disabled = false;
   runBtnText.textContent = 'Run Analysis';
-  // Demo notice above Run Analysis
   const notice = document.createElement('div');
+  notice.id = 'demoNotice';
   notice.style.cssText = 'font-size:12px;color:var(--muted);padding:4px 0;text-align:center;';
   notice.textContent = 'Demo mode — BMW 335i sample pre-loaded';
-  if (!document.getElementById('demoNotice')) {
-    notice.id = 'demoNotice';
-    runBtn.parentNode.insertBefore(notice, runBtn);
-  }
-});
+  runBtn.parentNode.insertBefore(notice, runBtn);
+})();
 </script>
 
 </body>
@@ -2627,4 +2621,7 @@ def config():
 
 @app.get("/", response_class=HTMLResponse)
 def root():
-    return HTMLResponse(_UI_HTML)
+    import json as _json
+    config_js = f"const SERVER_CONFIG = {_json.dumps({'demo_mode': DEMO_MODE, 'demo_vin': DEMO_VIN if DEMO_MODE else ''})};"
+    html = _UI_HTML.replace("// __SERVER_CONFIG__", config_js)
+    return HTMLResponse(html)
