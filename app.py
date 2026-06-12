@@ -647,6 +647,122 @@ def get_session(session_id: str):
     })
 
 
+@app.get("/api/trends/{vehicle_id}/health")
+def get_health_trend(vehicle_id: str, limit: int = 500):
+    store = SessionStore(SESSION_DB)
+    trend = store.get_health_trend(vehicle_id=vehicle_id, limit=min(limit, 500))
+    return JSONResponse(trend)
+
+
+_narrative_cache: dict[str, dict] = {}
+
+
+@app.get("/api/trends/{vehicle_id}/narrative")
+async def get_trend_narrative(vehicle_id: str):
+    if vehicle_id in _narrative_cache:
+        return JSONResponse(_narrative_cache[vehicle_id])
+
+    store = SessionStore(SESSION_DB)
+    health_trend = store.get_health_trend(vehicle_id=vehicle_id, limit=500)
+    session_count = len(health_trend)
+
+    if session_count == 0:
+        return JSONResponse({
+            "vehicle_id": vehicle_id,
+            "narrative": None,
+            "session_count": 0,
+            "date_range": {"earliest": "", "latest": ""},
+            "error": "No sessions with health scores found for this vehicle",
+        })
+
+    earliest = min(r["recorded_at"] for r in health_trend)[:10]
+    latest = max(r["recorded_at"] for r in health_trend)[:10]
+
+    if not os.getenv("OPENAI_API_KEY"):
+        result = {
+            "vehicle_id": vehicle_id,
+            "narrative": None,
+            "session_count": session_count,
+            "date_range": {"earliest": earliest, "latest": latest},
+            "error": "AI narrative unavailable — no API key configured",
+        }
+        return JSONResponse(result)
+
+    import statistics as _stats
+
+    def _sys_summary(key: str) -> dict:
+        vals = [r["system_scores"].get(key) for r in health_trend if r["system_scores"].get(key) is not None]
+        if not vals:
+            return {"mean": None, "trend": "no data", "sessions": 0}
+        mean_val = _stats.mean(vals)
+        last5 = vals[-5:] if len(vals) >= 5 else vals
+        first5 = vals[:5] if len(vals) >= 5 else vals
+        delta = _stats.mean(last5) - _stats.mean(first5)
+        trend = "improving" if delta > 0.03 else "declining" if delta < -0.03 else "stable"
+        return {"mean": round(mean_val, 3), "trend": trend, "sessions": len(vals)}
+
+    overall_vals = [r["overall_score"] for r in health_trend]
+    agg = {
+        "session_count": session_count,
+        "date_range": f"{earliest} to {latest}",
+        "overall": {
+            "mean": round(_stats.mean(overall_vals), 3),
+            "min":  round(min(overall_vals), 3),
+            "max":  round(max(overall_vals), 3),
+        },
+        "systems": {
+            "fueling":  _sys_summary("fueling"),
+            "cooling":  _sys_summary("cooling"),
+            "ignition": _sys_summary("ignition"),
+            "catalyst": _sys_summary("catalyst"),
+        },
+    }
+
+    system_prompt = (
+        "You are an expert automotive diagnostician. Analyze long-term vehicle health trends "
+        "across multiple OBD2 sessions and write a plain-language 2-3 paragraph summary for "
+        "the vehicle owner. Lead with the most important finding. Use plain language — no raw "
+        "PID names, no jargon. Mention the time span and number of sessions. End with a brief "
+        "outlook: is the vehicle trending healthy, stable, or toward a concern?"
+    )
+    user_message = (
+        f"Vehicle ID: {vehicle_id}\n\n"
+        f"Health trend summary across {session_count} sessions ({earliest} to {latest}):\n"
+        f"```json\n{json.dumps(agg, indent=2)}\n```\n\n"
+        "Scores are 0.0–1.0 (1.0 = fully healthy, 0.5 = concerning, 0.0 = critical). "
+        "Write a 2-3 paragraph plain-language health narrative."
+    )
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=600,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_message},
+            ],
+        )
+        narrative = response.choices[0].message.content or ""
+        result = {
+            "vehicle_id": vehicle_id,
+            "narrative": narrative,
+            "session_count": session_count,
+            "date_range": {"earliest": earliest, "latest": latest},
+        }
+        _narrative_cache[vehicle_id] = result
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse({
+            "vehicle_id": vehicle_id,
+            "narrative": None,
+            "session_count": session_count,
+            "date_range": {"earliest": earliest, "latest": latest},
+            "error": str(e),
+        }, status_code=500)
+
+
 @app.get("/api/trends/{vehicle_id}/{pid}")
 def get_trends(vehicle_id: str, pid: str, limit: int = 200):
     store = SessionStore(SESSION_DB)
@@ -781,6 +897,55 @@ async def analyze_history(vehicle_id: str):
         return JSONResponse({"urgency": urgency, "assessment": assessment, "vehicle_id": vehicle_id})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
+# Startup DB seeder
+# ---------------------------------------------------------------------------
+
+def _seed_db_if_empty() -> None:
+    seed_file = REPO_ROOT / "data" / "sample" / "bmw-ije0s-seed.json"
+    if not seed_file.exists():
+        print(f"[seed] Seed file not found — skipping ({seed_file})", flush=True)
+        return
+
+    store = SessionStore(SESSION_DB)
+    with store._conn() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM sessions WHERE vehicle_id = 'IJE0S'"
+        ).fetchone()[0]
+
+    if count > 0:
+        print(f"[seed] DB already has {count} IJE0S sessions — skipping seed", flush=True)
+        return
+
+    try:
+        records = json.loads(seed_file.read_text())
+        for rec in records:
+            store.save(SessionRecord(
+                session_id=      rec.get("session_id", str(__import__("uuid").uuid4())),
+                vehicle_id=      rec.get("vehicle_id", ""),
+                source=          rec.get("source", "mhd"),
+                file_path=       "",
+                file_name=       rec.get("file_name", ""),
+                recorded_at=     rec.get("recorded_at", ""),
+                ingested_at=     rec.get("ingested_at", ""),
+                row_count=       rec.get("row_count", 0),
+                pids_present=    rec.get("pids_present", []),
+                families_present=rec.get("families_present", []),
+                pid_stats=       rec.get("pid_stats", {}),
+                dtcs=            rec.get("dtcs", []),
+                warnings=        rec.get("warnings", []),
+                session_meta=    rec.get("session_meta", {}),
+                overall_score=   rec.get("overall_score"),
+                system_scores=   rec.get("system_scores", {}),
+            ))
+        print(f"[seed] Seeded {len(records)} sessions from bmw-ije0s-seed.json", flush=True)
+    except Exception as e:
+        print(f"[seed] ERROR loading seed data: {e}", flush=True)
+
+
+_seed_db_if_empty()
 
 
 # ---------------------------------------------------------------------------

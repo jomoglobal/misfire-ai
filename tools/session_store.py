@@ -286,6 +286,33 @@ class SessionStore:
         trend.sort(key=lambda x: x["recorded_at"] or "")
         return trend
 
+    def get_health_trend(self, vehicle_id: str, limit: int = 500) -> list[dict]:
+        """
+        Health score timeline for a vehicle — one entry per session that has
+        an overall_score, sorted chronologically ascending.
+
+        Returns list of {recorded_at, overall_score, system_scores}.
+        system_scores keys: fueling, cooling, ignition, catalyst.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT recorded_at, overall_score, system_scores "
+                "FROM sessions "
+                "WHERE vehicle_id = ? AND overall_score IS NOT NULL "
+                "ORDER BY recorded_at ASC LIMIT ?",
+                (vehicle_id, limit),
+            ).fetchall()
+
+        result = []
+        for row in rows:
+            system_scores = json.loads(row["system_scores"] or "{}")
+            result.append({
+                "recorded_at":   row["recorded_at"],
+                "overall_score": row["overall_score"],
+                "system_scores": system_scores,
+            })
+        return result
+
     def count_by_vehicle(self) -> dict[str, int]:
         """Session count grouped by vehicle_id."""
         with self._conn() as conn:
