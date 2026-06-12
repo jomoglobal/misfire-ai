@@ -1513,6 +1513,62 @@ _UI_HTML = """<!DOCTYPE html>
   .vc-count { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
   .no-trend { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 0; }
+
+  /* ── Vehicle history view ── */
+  .history-section { display: flex; flex-direction: column; gap: 16px; }
+  .history-divider {
+    display: flex; align-items: center; gap: 12px; margin: 8px 0;
+    font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px;
+  }
+  .history-divider hr { flex: 1; border: none; border-top: 1px solid var(--border); margin: 0; }
+
+  .narrative-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+  }
+  .narrative-panel-title {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px;
+  }
+  .narrative-text { font-size: 13px; color: var(--text); line-height: 1.65; }
+  .narrative-text p + p { margin-top: 10px; }
+  .narrative-loading { font-size: 13px; color: var(--muted); font-style: italic; }
+  .narrative-error { font-size: 13px; color: var(--muted); font-style: italic; }
+
+  .health-chart-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+  }
+  .health-chart-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .health-chart-sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  canvas.health-canvas { width: 100% !important; height: 220px !important; display: block; }
+
+  .system-cards-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;
+  }
+  .system-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px;
+  }
+  .sc-name { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+  .sc-score { font-size: 24px; font-weight: 700; }
+  .sc-score.good  { color: var(--green); }
+  .sc-score.warn  { color: var(--orange); }
+  .sc-score.crit  { color: var(--red); }
+  .sc-score.na    { color: var(--muted); font-size: 16px; }
+  .sc-trend { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .sc-trend.up   { color: var(--green); }
+  .sc-trend.down { color: var(--red); }
+  canvas.sparkline { width: 100% !important; height: 40px !important; display: block; margin-top: 8px; }
+
+  .history-footer {
+    font-size: 12px; color: var(--muted); text-align: center; padding: 4px 0;
+  }
+  .history-not-enough {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 32px; text-align: center;
+    color: var(--muted); font-size: 13px;
+  }
 </style>
 </head>
 <body>
@@ -1647,6 +1703,31 @@ _UI_HTML = """<!DOCTYPE html>
 
   <!-- Trends view (hidden until tab switch) -->
   <div id="trendsView">
+
+    <!-- Vehicle history section — populated by loadVehicleHistory() -->
+    <div class="history-section" id="historySection" style="display:none">
+      <!-- AI narrative -->
+      <div class="narrative-panel">
+        <div class="narrative-panel-title">Vehicle Health Narrative</div>
+        <div id="narrativeContent"><span class="narrative-loading">Loading AI analysis...</span></div>
+      </div>
+      <!-- Health timeline -->
+      <div class="health-chart-card">
+        <div class="health-chart-title" id="historyChartTitle">Overall Health Score</div>
+        <div class="health-chart-sub" id="historyChartSub"></div>
+        <canvas class="health-canvas" id="healthCanvas"></canvas>
+      </div>
+      <!-- System cards -->
+      <div class="system-cards-grid" id="systemCardsGrid" style="display:none"></div>
+      <!-- Footer -->
+      <div class="history-footer" id="historyFooter"></div>
+    </div>
+
+    <div id="historyNotEnough" style="display:none" class="history-not-enough"></div>
+
+    <div class="history-divider" id="historyDivider" style="display:none">
+      <hr><span>Explore signals</span><hr>
+    </div>
 
     <div class="vehicle-grid" id="vehicleGrid">
       <div style="color:var(--muted);font-size:12px">Loading vehicles...</div>
@@ -2562,6 +2643,10 @@ function switchTab(tab) {
     analyzeView.style.display = 'none';
     trendsView.classList.add('active');
     if (!window._vehiclesLoaded) loadVehicleGrid();
+    if (SERVER_CONFIG.demo_mode && !window._historyLoaded) {
+      window._historyLoaded = true;
+      loadVehicleHistory('IJE0S');
+    }
   }
 }
 
@@ -2605,6 +2690,218 @@ async function loadVehicleGrid() {
 // ── Trends — chart ─────────────────────────────────────────────────────────
 let trendCanvas = document.getElementById('trendChart');
 let trendCtx    = trendCanvas ? trendCanvas.getContext('2d') : null;
+
+// ── Vehicle history (longitudinal) ────────────────────────────────────────
+
+async function loadVehicleHistory(vehicleId) {
+  document.getElementById('historySection').style.display = 'none';
+  document.getElementById('historyNotEnough').style.display = 'none';
+  document.getElementById('historyDivider').style.display = 'none';
+
+  let health = [], narrative = null;
+
+  try {
+    const [hRes, nRes] = await Promise.all([
+      fetch('https://' + location.hostname + '/api/trends/' + encodeURIComponent(vehicleId) + '/health'),
+      fetch('https://' + location.hostname + '/api/trends/' + encodeURIComponent(vehicleId) + '/narrative'),
+    ]);
+    health = await hRes.json();
+    narrative = await nRes.json();
+  } catch(e) {
+    document.getElementById('historyNotEnough').style.display = '';
+    document.getElementById('historyNotEnough').textContent = 'Unable to load history: ' + e.message;
+    return;
+  }
+
+  const n = Array.isArray(health) ? health.length : 0;
+
+  if (n < 5) {
+    document.getElementById('historyNotEnough').style.display = '';
+    document.getElementById('historyNotEnough').innerHTML =
+      '<strong>Not enough sessions for trend analysis</strong><br>' +
+      (n === 0 ? 'No sessions recorded yet.' : n + ' session' + (n === 1 ? '' : 's') + ' recorded — at least 5 needed for trend charts.');
+    document.getElementById('historyDivider').style.display = 'flex';
+    return;
+  }
+
+  // ── Narrative ──
+  const narrativeEl = document.getElementById('narrativeContent');
+  if (narrative && narrative.narrative) {
+    const plain = narrative.narrative.replace(/[*][*](.*?)[*][*]/g, '$1');
+    const paras = plain.split('\\n\\n').filter(p => p.trim()).map(p => '<p>' + esc(p.trim()) + '</p>').join('');
+    narrativeEl.innerHTML = '<div class="narrative-text">' + paras + '</div>';
+  } else if (narrative && narrative.error) {
+    narrativeEl.innerHTML = '<span class="narrative-error">AI narrative unavailable</span>';
+  } else {
+    narrativeEl.innerHTML = '<span class="narrative-error">AI narrative unavailable</span>';
+  }
+
+  // ── Health timeline chart ──
+  const earliest = (health[0]?.recorded_at || '').slice(0, 10);
+  const latest   = (health[n - 1]?.recorded_at || '').slice(0, 10);
+  document.getElementById('historyChartSub').textContent =
+    n + ' sessions  ·  ' + earliest + ' → ' + latest;
+
+  const healthCanvas = document.getElementById('healthCanvas');
+  const hCtx = healthCanvas.getContext('2d');
+  const hLabels = health.map(r => (r.recorded_at || '').slice(0, 10));
+  const hValues = health.map(r => r.overall_score !== null ? r.overall_score * 100 : null);
+  drawHealthChart(hCtx, healthCanvas, hLabels, hValues);
+
+  // ── System cards (20+ sessions only) ──
+  const sysGrid = document.getElementById('systemCardsGrid');
+  if (n >= 20) {
+    const systems = [
+      { key: 'fueling',  label: 'Fuel System' },
+      { key: 'cooling',  label: 'Engine Cooling' },
+      { key: 'ignition', label: 'Ignition' },
+      { key: 'catalyst', label: 'Catalytic Converter' },
+    ];
+    sysGrid.innerHTML = systems.map(sys => {
+      const vals = health.map(r => {
+        const s = r.system_scores && r.system_scores[sys.key];
+        return (s !== null && s !== undefined) ? s : null;
+      }).filter(v => v !== null);
+      if (vals.length === 0) return _systemCardHtml(sys.label, null, 'stable', []);
+      const last = vals[vals.length - 1];
+      const last5  = vals.slice(-5);
+      const prev5  = vals.slice(-10, -5);
+      let trend = 'stable';
+      if (prev5.length >= 3) {
+        const delta = (last5.reduce((a,b)=>a+b,0)/last5.length) - (prev5.reduce((a,b)=>a+b,0)/prev5.length);
+        if (delta > 0.03) trend = 'improving';
+        else if (delta < -0.03) trend = 'declining';
+      }
+      return _systemCardHtml(sys.label, last, trend, vals.slice(-20));
+    }).join('');
+    sysGrid.style.display = 'grid';
+  }
+
+  // ── Footer ──
+  const earliestYear = earliest.slice(0, 4);
+  const latestYear   = latest.slice(0, 4);
+  const yearRange = earliestYear === latestYear ? earliestYear : earliestYear + ' – ' + latestYear;
+  document.getElementById('historyFooter').textContent = n + ' sessions · ' + yearRange;
+
+  document.getElementById('historySection').style.display = 'flex';
+  document.getElementById('historyDivider').style.display = 'flex';
+
+  // Redraw after visible so canvas has layout dimensions
+  requestAnimationFrame(() => {
+    drawHealthChart(hCtx, healthCanvas, hLabels, hValues);
+    if (n >= 20) _redrawSparklines();
+  });
+}
+
+function _systemCardHtml(label, score, trend, sparkVals) {
+  const pct = score !== null ? Math.round(score * 100) + '%' : 'N/A';
+  const cls = score === null ? 'na' : score >= 0.75 ? 'good' : score >= 0.5 ? 'warn' : 'crit';
+  const trendStr = trend === 'improving' ? '↑ Improving' : trend === 'declining' ? '↓ Declining' : '→ Stable';
+  const trendCls = trend === 'improving' ? 'up' : trend === 'declining' ? 'down' : '';
+  const sparkId = 'spark-' + label.replace(/[ ]+/g, '-').toLowerCase();
+  return '<div class="system-card">'
+    + '<div class="sc-name">' + esc(label) + '</div>'
+    + '<div class="sc-score ' + cls + '">' + esc(pct) + '</div>'
+    + '<div class="sc-trend ' + trendCls + '">' + esc(trendStr) + '</div>'
+    + (sparkVals.length > 1 ? '<canvas class="sparkline" id="' + sparkId + '" data-vals="' + sparkVals.join(',') + '"></canvas>' : '')
+    + '</div>';
+}
+
+function _redrawSparklines() {
+  document.querySelectorAll('canvas.sparkline').forEach(c => {
+    const vals = (c.dataset.vals || '').split(',').map(Number).filter(v => !isNaN(v));
+    if (vals.length < 2) return;
+    const ctx = c.getContext('2d');
+    const W = c.offsetWidth || 160;
+    const H = 40;
+    c.width = W; c.height = H;
+    const vmin = Math.min(...vals), vmax = Math.max(...vals);
+    const range = vmax - vmin || 0.01;
+    const toX = i => (i / (vals.length - 1)) * W;
+    const toY = v => H - 4 - ((v - vmin) / range) * (H - 8);
+    ctx.clearRect(0, 0, W, H);
+    ctx.beginPath();
+    vals.forEach((v, i) => { i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)); });
+    ctx.strokeStyle = 'rgba(74,158,255,0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+}
+
+function drawHealthChart(ctx, canvas, labels, values) {
+  if (!ctx) return;
+  const W = canvas.offsetWidth || 800;
+  const H = 220;
+  canvas.width = W; canvas.height = H;
+
+  const pad = { top: 16, right: 20, bottom: 36, left: 44 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const nums = values.filter(v => v !== null && !isNaN(v));
+  if (nums.length === 0) return;
+
+  const vmin = 0, vmax = 100;
+  const toX = i => pad.left + (i / Math.max(values.length - 1, 1)) * cw;
+  const toY = v => pad.top + ch - ((v - vmin) / (vmax - vmin)) * ch;
+
+  // Grid
+  ctx.strokeStyle = 'rgba(48,54,61,0.8)';
+  ctx.lineWidth = 1;
+  [0, 25, 50, 75, 100].forEach(pct => {
+    const y = toY(pct);
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(160,160,160,0.7)';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(pct + '%', pad.left - 6, y + 4);
+  });
+
+  // Zone bands (green/amber/red)
+  ctx.fillStyle = 'rgba(61,186,111,0.04)';
+  ctx.fillRect(pad.left, toY(100), cw, toY(75) - toY(100));
+  ctx.fillStyle = 'rgba(245,166,35,0.05)';
+  ctx.fillRect(pad.left, toY(75), cw, toY(50) - toY(75));
+  ctx.fillStyle = 'rgba(255,68,68,0.05)';
+  ctx.fillRect(pad.left, toY(50), cw, toY(0) - toY(50));
+
+  // X labels
+  const step = Math.max(1, Math.ceil(labels.length / 8));
+  ctx.fillStyle = 'rgba(160,160,160,0.7)';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  labels.forEach((lbl, i) => {
+    if (i % step === 0 || i === labels.length - 1) {
+      ctx.fillText((lbl || '').slice(0, 7), toX(i), H - pad.bottom + 14);
+    }
+  });
+
+  // Filled area
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = toX(i), y = toY(v !== null ? v : 0);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.lineTo(toX(values.length - 1), toY(vmin));
+  ctx.lineTo(toX(0), toY(vmin));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(74,158,255,0.07)';
+  ctx.fill();
+
+  // Line — color by current health
+  const lastVal = nums[nums.length - 1];
+  const lineColor = lastVal >= 75 ? '#3dba6f' : lastVal >= 50 ? '#f5a623' : '#ff4444';
+  ctx.beginPath();
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2;
+  values.forEach((v, i) => {
+    const x = toX(i), y = toY(v !== null ? v : (vmin + vmax) / 2);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
 
 async function loadTrend() {
   const vid = document.getElementById('trendVehicle').value || selectedTrendVehicle;
