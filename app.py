@@ -33,8 +33,8 @@ SESSION_DB = str(REPO_ROOT / "data" / "sessions.db")
 # Public demo sample — committed to the repo so it exists on a clean deploy.
 # The carOBD/external datasets are gitignored and absent on Railway, so the
 # demo must default to a file that ships with the repo.
-DEMO_SAMPLE = str(REPO_ROOT / "data" / "sample" / "2009-BMW-335i-2026-04-15 13-15-01.csv")
-DEMO_VIN = "WBAPN73579A395571"  # 2009 BMW 335i — pre-filled for the public demo
+DEMO_SAMPLE = str(REPO_ROOT / "data" / "sample" / "bmw-335i-demo-session.csv")
+DEMO_VIN = "WBAPM7C57AA330001"  # 2010 BMW 335i gasoline — decodes correctly via NHTSA
 
 # Local/dev default keeps the larger external dataset when present, but falls
 # back to the committed BMW sample so the app never points at a missing file.
@@ -2183,22 +2183,24 @@ function renderSeparate(d) {
   const overall = d.overall_score;
   const systems = d.systems || {};
 
-  const sysCards = Object.entries(systems).map(([name, info]) => {
-    const score = info.score;
-    const pct   = score !== null && score !== undefined ? Math.round(score * 100) : null;
-    const color = scoreColor(score);
-    const bar   = pct !== null
-      ? '<div class="score-bar-wrap"><div class="score-bar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>'
-      : '<div class="score-bar-wrap"><div class="score-bar-fill" style="width:0%;background:var(--muted)"></div></div>';
-    return '<div class="sys-card">' +
-      '<div class="sys-name">' + esc(name) + '</div>' +
-      '<div class="sys-score-row">' +
-        '<div class="sys-score-val" style="color:' + color + '">' + (pct !== null ? pct + '%' : 'N/A') + '</div>' +
-        bar +
-      '</div>' +
-      '<div class="sys-summary">' + esc(info.summary || '') + '</div>' +
-    '</div>';
-  }).join('');
+  const sysLabels = {fueling:'Fuel System', cooling:'Engine Cooling', ignition:'Ignition', catalyst:'Catalytic Converter'};
+  const sysCards = Object.entries(systems)
+    .filter(([, info]) => info.score !== null && info.score !== undefined)
+    .map(([name, info]) => {
+      const score = info.score;
+      const pct   = Math.round(score * 100);
+      const color = scoreColor(score);
+      const label = sysLabels[name] || name;
+      const bar   = '<div class="score-bar-wrap"><div class="score-bar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>';
+      return '<div class="sys-card">' +
+        '<div class="sys-name">' + esc(label) + '</div>' +
+        '<div class="sys-score-row">' +
+          '<div class="sys-score-val" style="color:' + color + '">' + pct + '%</div>' +
+          bar +
+        '</div>' +
+        '<div class="sys-summary">' + esc(info.summary || '') + '</div>' +
+      '</div>';
+    }).join('');
 
   const overallColor = scoreColor(overall);
   const overallPct = overall !== null && overall !== undefined ? Math.round(overall * 100) : null;

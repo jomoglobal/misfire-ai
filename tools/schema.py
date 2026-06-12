@@ -954,7 +954,7 @@ HEALTHY_RANGES: dict[str, tuple[float, float]] = {
     "LTFT_B1":       (-5.0,   5.0),
     "LTFT_B2":       (-5.0,   5.0),
     "ECT":           (75.0,  110.0),
-    "TIMING_ADV":    (-5.0,  45.0),
+    "TIMING_ADV":    (-15.0, 45.0),
     "CAT_TEMP_B1S1": (300.0, 850.0),
     "CAT_TEMP_B1S2": (300.0, 850.0),
     "AFR_B1":        (13.5,  15.5),
