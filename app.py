@@ -1390,13 +1390,13 @@ _UI_HTML = """<!DOCTYPE html>
     </div>
 
     <!-- Divider with label -->
-    <div style="display:flex;align-items:center;gap:8px">
+    <div id="dropDivider" style="display:flex;align-items:center;gap:8px">
       <hr class="divider" style="flex:1;margin:0">
       <span style="font-size:11px;color:var(--muted);white-space:nowrap">or drop a new file</span>
       <hr class="divider" style="flex:1;margin:0">
     </div>
 
-    <div class="sidebar-section">
+    <div class="sidebar-section" id="dropSection">
       <div class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept=".csv">
         <div class="drop-icon">&#128196;</div>
@@ -2587,10 +2587,34 @@ document.getElementById('trendVehicle').addEventListener('change', e => {
     c.classList.toggle('selected', c.dataset.vid === e.target.value);
   });
 });
+
+// Apply demo-mode UI constraints: hide upload, pre-fill VIN
+fetch('/config').then(r => r.json()).then(cfg => {
+  if (!cfg.demo_mode) return;
+  // Pre-fill VIN (read-only so user sees it but can't change it)
+  const vinEl = document.getElementById('vinInput');
+  if (vinEl) { vinEl.value = cfg.demo_vin; vinEl.readOnly = true; }
+  // Hide drop zone section and its divider
+  const dropSection = document.getElementById('dropSection');
+  const dropDivider = document.getElementById('dropDivider');
+  if (dropSection) dropSection.style.display = 'none';
+  if (dropDivider) dropDivider.style.display = 'none';
+  // Add a subtle demo notice above Run Analysis
+  const notice = document.createElement('div');
+  notice.style.cssText = 'font-size:12px;color:var(--muted);padding:4px 0;text-align:center;';
+  notice.textContent = 'Demo mode — BMW 335i sample pre-loaded';
+  const runBtn = document.getElementById('runBtn');
+  if (runBtn) runBtn.parentNode.insertBefore(notice, runBtn);
+});
 </script>
 
 </body>
 </html>"""
+
+
+@app.get("/config")
+def config():
+    return {"demo_mode": DEMO_MODE, "demo_vin": DEMO_VIN if DEMO_MODE else ""}
 
 
 @app.get("/", response_class=HTMLResponse)
