@@ -792,7 +792,7 @@ _UI_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MisfireAI — OBD2 Diagnostic Pipeline</title>
+<title>MisfireAI — Vehicle Health</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1363,7 +1363,7 @@ _UI_HTML = """<!DOCTYPE html>
     <button class="tab-btn active" id="tabAnalyze" onclick="switchTab('analyze')">ANALYZE</button>
     <button class="tab-btn" id="tabTrends" onclick="switchTab('trends')">TRENDS</button>
   </div>
-  <span class="badge">OBD2 DEMO</span>
+  <span class="badge">Live Demo</span>
 </nav>
 
 <!-- Layout -->
@@ -1401,8 +1401,12 @@ _UI_HTML = """<!DOCTYPE html>
         __DEMO_FILE_INPUT__
         <div class="drop-icon">&#128196;</div>
         <div class="drop-text" id="dropText">Drop CSV here or click to browse</div>
-        <div class="drop-hint">MHD · CarScanner · CarOBD · CephaSAX · iSay Gerard</div>
+        <div class="drop-hint">Upload your OBD2 data file</div>
       </div>
+    </div>
+
+    <div class="sidebar-section">
+      <p style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:4px;">Upload your OBD2 data. Get a plain-language vehicle health report &mdash; backed by real AI analysis.</p>
     </div>
 
     <div class="sidebar-section">
@@ -1412,7 +1416,7 @@ _UI_HTML = """<!DOCTYPE html>
         <input type="text" id="vinInput" maxlength="17" placeholder="17-char VIN" value="__DEMO_VIN__" __VIN_READONLY__>
       </div>
       <div class="field">
-        <label for="emailInput">Owner Email (for HITL approval)</label>
+        <label for="emailInput">Email (optional — receive your report)</label>
         <input type="email" id="emailInput" placeholder="email address">
       </div>
     </div>
@@ -1450,19 +1454,19 @@ _UI_HTML = """<!DOCTYPE html>
     <div class="pipeline-bar" id="pipelineBar" style="display:none">
       <div class="pipe-stage pipe-catch" id="stage-catch">
         <div class="pipe-dot">1</div>
-        <div class="pipe-label">CATCH</div>
+        <div class="pipe-label">Read Data</div>
       </div>
       <div class="pipe-stage pipe-enrich" id="stage-enrich">
         <div class="pipe-dot">2</div>
-        <div class="pipe-label">ENRICH</div>
+        <div class="pipe-label">Identify Vehicle</div>
       </div>
       <div class="pipe-stage pipe-sep" id="stage-sep">
         <div class="pipe-dot">3</div>
-        <div class="pipe-label">SEPARATE</div>
+        <div class="pipe-label">Score Systems</div>
       </div>
       <div class="pipe-stage pipe-compound" id="stage-compound">
         <div class="pipe-dot">4</div>
-        <div class="pipe-label">COMPOUND</div>
+        <div class="pipe-label">AI Report</div>
       </div>
     </div>
 
@@ -1800,7 +1804,7 @@ function renderCatch(d) {
   el.innerHTML =
     '<div class="panel-header">' +
       '<div class="panel-icon">C</div>' +
-      '<div class="panel-title">CATCH &mdash; Signal Ingestion</div>' +
+      '<div class="panel-title">Read Data &mdash; Signal Capture</div>' +
       '<div class="panel-subtitle"><span class="chip chip-blue">' + esc(d.source || 'unknown') + '</span></div>' +
     '</div>' +
     '<div class="panel-body">' +
@@ -1898,7 +1902,7 @@ function renderEnrich(d) {
   el.innerHTML =
     '<div class="panel-header">' +
       '<div class="panel-icon">E</div>' +
-      '<div class="panel-title">ENRICH &mdash; Vehicle Metadata</div>' +
+      '<div class="panel-title">Identify Vehicle &mdash; NHTSA Lookup</div>' +
     '</div>' +
     '<div class="panel-body">' + body + '</div>';
 
@@ -1934,7 +1938,7 @@ function renderSeparate(d) {
   el.innerHTML =
     '<div class="panel-header">' +
       '<div class="panel-icon">S</div>' +
-      '<div class="panel-title">SEPARATE &mdash; System Health Scoring</div>' +
+      '<div class="panel-title">Score Systems &mdash; Health Analysis</div>' +
       (overallPct !== null ? '<div class="panel-subtitle"><span class="chip ' + scoreChipClass(overall) + '">Overall ' + overallPct + '%</span></div>' : '') +
     '</div>' +
     '<div class="panel-body">' +
@@ -1976,7 +1980,7 @@ function renderCompound(d) {
   el.innerHTML =
     '<div class="panel-header">' +
       '<div class="panel-icon">A</div>' +
-      '<div class="panel-title">COMPOUND &mdash; AI Assessment</div>' +
+      '<div class="panel-title">AI Report &mdash; Diagnostic Summary</div>' +
       '<div class="panel-subtitle"><span class="urgency urgency-' + urgency + '">' + esc(urgency) + '</span></div>' +
     '</div>' +
     '<div class="panel-body">' +
