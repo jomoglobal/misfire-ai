@@ -1709,7 +1709,7 @@ _UI_HTML = """<!DOCTYPE html>
 <!-- How it works hero -->
 <section class="hero">
   <div class="hero-headline">Your car is talking. Are you listening?</div>
-  <div class="hero-sub">Any driver can plug in a $30 OBD2 dongle and get AI-powered health reports — no mechanic needed.</div>
+  <div class="hero-sub">Any driver can plug in an OBD2 dongle and get AI-powered health reports — no mechanic needed.</div>
 
   <div class="hero-steps">
 
