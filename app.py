@@ -1652,13 +1652,27 @@ _UI_HTML = """<!DOCTYPE html>
 
   /* Vehicle context card (demo sidebar) */
   .vehicle-context-card {
-    display: flex; align-items: center; gap: 12px;
-    background: var(--surface2); border-radius: 8px; padding: 12px 14px;
-    border: 1px solid var(--border);
+    background: var(--surface2); border-radius: 8px;
+    border: 1px solid var(--border); overflow: hidden;
   }
-  .vehicle-context-icon { font-size: 28px; line-height: 1; }
+  .vehicle-img-wrap {
+    width: 100%; height: 130px; background: #0a0f16;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative;
+  }
+  .vehicle-img-wrap img {
+    width: 100%; height: 100%; object-fit: cover; object-position: center;
+    display: block;
+  }
+  .vehicle-img-fallback {
+    font-size: 48px; opacity: 0.25;
+  }
+  .vehicle-context-info {
+    padding: 10px 14px 12px;
+  }
   .vehicle-context-name { font-size: 14px; font-weight: 700; color: var(--text); }
-  .vehicle-context-meta { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: monospace; }
+  .vehicle-context-engine { font-size: 12px; color: var(--blue); margin-top: 2px; font-weight: 600; }
+  .vehicle-context-meta { font-size: 11px; color: var(--muted); margin-top: 3px; font-family: monospace; letter-spacing: 0.3px; }
 
   .datalog-stats {
     display: flex; gap: 0; margin-top: 10px;
@@ -1883,9 +1897,16 @@ _UI_HTML = """<!DOCTYPE html>
     <!-- Demo mode: vehicle context card -->
     <div class="sidebar-section" id="demoVehicleCard" style="__HIDE_DEMO_CARD__">
       <div class="vehicle-context-card">
-        <div class="vehicle-context-icon">&#128663;</div>
+        <div class="vehicle-img-wrap" id="sidebarVehicleImgWrap">
+          <img id="sidebarVehicleImg"
+               src="https://cdn.imagin.studio/getimage?customer=img&make=bmw&modelFamily=3-series&modelYear=2009&angle=01&width=600"
+               alt="2009 BMW 335i"
+               onerror="this.style.display='none';document.getElementById('sidebarVehicleImgFallback').style.display='flex'">
+          <div id="sidebarVehicleImgFallback" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;font-size:48px;opacity:0.2;">&#128663;</div>
+        </div>
         <div class="vehicle-context-info">
           <div class="vehicle-context-name">2009 BMW 335i</div>
+          <div class="vehicle-context-engine">3.0L Twin-Turbo I6 &middot; N54</div>
           <div class="vehicle-context-meta">VIN &middot; __DEMO_VIN__</div>
         </div>
       </div>
@@ -2182,6 +2203,128 @@ const sessionsList = document.getElementById('sessionsList');
 const errorBanner  = document.getElementById('errorBanner');
 const pipelineBar  = document.getElementById('pipelineBar');
 const emptyState   = document.getElementById('emptyState');
+
+// ── Vehicle image ──────────────────────────────────────────────────────────
+// Maps make+model to Imagin Studio modelFamily slug.
+// Falls back to null (no image) if make is unknown.
+const _MODEL_FAMILY = {
+  'bmw': {
+    '1 series':'1-series','2 series':'2-series','3 series':'3-series',
+    '4 series':'4-series','5 series':'5-series','6 series':'6-series',
+    '7 series':'7-series','8 series':'8-series',
+    'm3':'m3','m4':'m4','m5':'m5','m6':'m6','m8':'m8',
+    'x1':'x1','x2':'x2','x3':'x3','x4':'x4','x5':'x5','x6':'x6','x7':'x7',
+    'z4':'z4','i3':'i3','i4':'i4','i8':'i8',
+    '335i':'3-series','328i':'3-series','320i':'3-series','325i':'3-series',
+    '330i':'3-series','340i':'3-series','335d':'3-series',
+    '550i':'5-series','535i':'5-series','528i':'5-series',
+    '750i':'7-series','740i':'7-series',
+  },
+  'mercedes-benz': {
+    'c-class':'c-class','e-class':'e-class','s-class':'s-class',
+    'a-class':'a-class','b-class':'b-class','g-class':'g-class',
+    'glc':'glc','gle':'gle','gls':'gls','gla':'gla','glb':'glb',
+    'cla':'cla','cls':'cls','sl':'sl','slc':'slc','amg gt':'amg-gt',
+  },
+  'audi': {
+    'a3':'a3','a4':'a4','a5':'a5','a6':'a6','a7':'a7','a8':'a8',
+    'q3':'q3','q5':'q5','q7':'q7','q8':'q8',
+    'tt':'tt','r8':'r8','e-tron':'e-tron','s3':'s3','s4':'s4','s5':'s5',
+    'rs3':'rs3','rs4':'rs4','rs5':'rs5','rs6':'rs6','rs7':'rs7',
+  },
+  'volkswagen': {
+    'golf':'golf','jetta':'jetta','passat':'passat','tiguan':'tiguan',
+    'atlas':'atlas','arteon':'arteon','id.4':'id4','touareg':'touareg',
+  },
+  'porsche': {
+    '911':'911','cayenne':'cayenne','macan':'macan','panamera':'panamera',
+    'taycan':'taycan','boxster':'boxster','cayman':'cayman',
+  },
+  'toyota': {
+    'camry':'camry','corolla':'corolla','rav4':'rav4','highlander':'highlander',
+    '4runner':'4runner','tacoma':'tacoma','tundra':'tundra','prius':'prius',
+    'supra':'supra','86':'gt86','gr86':'gr86','sequoia':'sequoia','avalon':'avalon',
+  },
+  'honda': {
+    'civic':'civic','accord':'accord','cr-v':'cr-v','pilot':'pilot',
+    'odyssey':'odyssey','passport':'passport','ridgeline':'ridgeline',
+    'fit':'fit','hrv':'hr-v','insight':'insight','type r':'civic-type-r',
+  },
+  'ford': {
+    'mustang':'mustang','f-150':'f-150','explorer':'explorer','escape':'escape',
+    'bronco':'bronco','ranger':'ranger','edge':'edge','fusion':'fusion',
+    'expedition':'expedition','maverick':'maverick',
+  },
+  'chevrolet': {
+    'camaro':'camaro','corvette':'corvette','silverado':'silverado',
+    'equinox':'equinox','tahoe':'tahoe','suburban':'suburban','blazer':'blazer',
+    'malibu':'malibu','traverse':'traverse','colorado':'colorado',
+  },
+  'dodge': {
+    'challenger':'challenger','charger':'charger','durango':'durango',
+    'ram 1500':'ram-1500','viper':'viper',
+  },
+  'subaru': {
+    'wrx':'wrx','impreza':'impreza','outback':'outback','forester':'forester',
+    'crosstrek':'crosstrek','legacy':'legacy','brz':'brz','ascent':'ascent',
+    'sti':'wrx-sti',
+  },
+  'nissan': {
+    'gt-r':'gt-r','370z':'370z','350z':'350z','altima':'altima',
+    'maxima':'maxima','sentra':'sentra','rogue':'rogue','murano':'murano',
+    'pathfinder':'pathfinder','frontier':'frontier','titan':'titan',
+  },
+  'mazda': {
+    'mazda3':'3','mazda6':'6','cx-3':'cx-3','cx-5':'cx-5','cx-9':'cx-9',
+    'mx-5':'mx-5','miata':'mx-5','rx-8':'rx-8',
+  },
+  'hyundai': {
+    'elantra':'elantra','sonata':'sonata','tucson':'tucson','santa fe':'santa-fe',
+    'veloster':'veloster','genesis':'genesis','ioniq':'ioniq',
+  },
+  'kia': {
+    'stinger':'stinger','sportage':'sportage','sorento':'sorento',
+    'soul':'soul','forte':'forte','telluride':'telluride','k5':'k5',
+  },
+  'lexus': {
+    'is':'is','es':'es','gs':'gs','ls':'ls','gx':'gx','lx':'lx',
+    'rx':'rx','nx':'nx','ux':'ux','lc':'lc','rc':'rc',
+  },
+  'jeep': {
+    'wrangler':'wrangler','grand cherokee':'grand-cherokee','cherokee':'cherokee',
+    'gladiator':'gladiator','renegade':'renegade','compass':'compass',
+  },
+};
+
+function carImageUrl(make, model, year) {
+  if (!make || !year) return null;
+  const makeKey = make.toLowerCase().trim();
+  const modelKey = (model || '').toLowerCase().trim();
+  const makeMap = _MODEL_FAMILY[makeKey];
+  if (!makeMap) return null;
+  // Try exact model match, then partial match
+  let family = makeMap[modelKey];
+  if (!family) {
+    for (const [k, v] of Object.entries(makeMap)) {
+      if (modelKey.includes(k) || k.includes(modelKey)) { family = v; break; }
+    }
+  }
+  if (!family) return null;
+  return 'https://cdn.imagin.studio/getimage?customer=img' +
+    '&make=' + encodeURIComponent(makeKey) +
+    '&modelFamily=' + encodeURIComponent(family) +
+    '&modelYear=' + encodeURIComponent(year) +
+    '&angle=01&width=600';
+}
+
+function vehicleImgHtml(make, model, year, altText) {
+  const url = carImageUrl(make, model, year);
+  if (!url) return '<div style="font-size:40px;opacity:0.2;padding:20px 0;">&#128663;</div>';
+  const alt = esc(altText || [year, make, model].filter(Boolean).join(' '));
+  return '<img src="' + url + '" alt="' + alt + '" ' +
+    'style="width:100%;height:140px;object-fit:cover;object-position:center;display:block;border-radius:6px 6px 0 0;" ' +
+    'onerror="this.style.display=\'none\'">';
+}
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 function scoreColor(s) {
@@ -2558,8 +2701,10 @@ function renderEnrich(d) {
         '</div>';
     }
 
+    const imgHtml = vehicleImgHtml(d.make, d.model, d.year);
     body =
-      '<div class="stats-row">' +
+      imgHtml +
+      '<div class="stats-row" style="margin-top:10px;">' +
         '<div class="stat-item"><div class="stat-val" style="color:var(--green);font-size:18px;">' + esc(vehicle || 'Unknown') + '</div><div class="stat-lbl">Vehicle</div></div>' +
       '</div>' +
       '<div class="tags">' +
