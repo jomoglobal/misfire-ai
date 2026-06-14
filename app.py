@@ -957,7 +957,15 @@ _UI_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MisfireAI — Vehicle Health</title>
+<title>MisfireAI — Know your car before it breaks</title>
+<meta name="description" content="Most drivers find out something is wrong when the check engine light comes on — or when the mechanic says $3,000. MisfireAI reads your OBD2 data and tells you what's developing weeks before that.">
+<meta property="og:title" content="MisfireAI — Know your car before it breaks">
+<meta property="og:description" content="Real AI diagnostics from your OBD2 data. Fuel trim drift, knock retard, cooling degradation — spotted weeks early. Running live on a 2009 BMW 335i with 484 real drive sessions.">
+<meta property="og:url" content="https://demo.datronex.net">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="MisfireAI — Know your car before it breaks">
+<meta name="twitter:description" content="Real AI diagnostics from your OBD2 data. Fuel trim drift, knock retard, cooling degradation — spotted weeks early.">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1703,13 +1711,13 @@ _UI_HTML = """<!DOCTYPE html>
 
 <!-- Demo banner -->
 <div style="background:#1a3a1a;border-bottom:1px solid #2d5a2d;color:#a8d8a8;text-align:center;padding:8px 16px;font-size:13px;line-height:1.5;">
-  This is a live demo on real vehicle data. Your own data would show findings specific to your car &mdash; fuel system drift, ignition wear, cooling degradation &mdash; before they become breakdowns.
+  Live demo &mdash; real data from a 2009 BMW 335i with 484 logged drives over 3 years. Hit <strong style="color:#c8f0c8;">Run Analysis</strong> to see what MisfireAI found.
 </div>
 
 <!-- How it works hero -->
 <section class="hero">
-  <div class="hero-headline">Your car is talking. Are you listening?</div>
-  <div class="hero-sub">Any driver can plug in an OBD2 dongle and get AI-powered health reports — no mechanic needed.</div>
+  <div class="hero-headline">Know your car before it breaks.</div>
+  <div class="hero-sub">Most drivers find out something is wrong when the check engine light comes on &mdash; or when the mechanic says $3,000. MisfireAI reads your car&rsquo;s data and tells you what&rsquo;s developing <em>weeks</em> before that.</div>
 
   <div class="hero-steps">
 
@@ -1739,7 +1747,7 @@ _UI_HTML = """<!DOCTYPE html>
         <text x="74" y="32" text-anchor="middle" font-size="11" font-weight="700" fill="#4a9eff">1</text>
       </svg>
       <div class="hero-step-title">Plug it in</div>
-      <div class="hero-step-sub">An OBD2 dongle fits any car made after 1996. Takes 30 seconds.</div>
+      <div class="hero-step-sub">A small wireless adapter plugs under your dashboard. Every car made after 1996 has the port. Takes 30 seconds.</div>
     </div>
 
     <div class="hero-arrow">›</div>
@@ -1775,8 +1783,8 @@ _UI_HTML = """<!DOCTYPE html>
         <circle cx="76" cy="16" r="9" fill="#1a2520" stroke="#3dba6f" stroke-width="1.5"/>
         <text x="76" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#3dba6f">2</text>
       </svg>
-      <div class="hero-step-title">Drive normally</div>
-      <div class="hero-step-sub">Your dongle silently logs every sensor signal — RPM, fuel trims, timing, boost — at up to 50 readings per second.</div>
+      <div class="hero-step-title">Just drive</div>
+      <div class="hero-step-sub">The adapter records everything silently in the background. You don&rsquo;t have to do anything differently.</div>
     </div>
 
     <div class="hero-arrow">›</div>
@@ -1805,7 +1813,7 @@ _UI_HTML = """<!DOCTYPE html>
         <text x="72" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#e040fb">3</text>
       </svg>
       <div class="hero-step-title">Open the app</div>
-      <div class="hero-step-sub">Open MisfireAI on your phone or browser. Your data syncs automatically — nothing to export or transfer.</div>
+      <div class="hero-step-sub">Open MisfireAI on your phone or browser. Your drive data is already there &mdash; nothing to plug in, export, or transfer.</div>
     </div>
 
     <div class="hero-arrow">›</div>
@@ -1836,19 +1844,19 @@ _UI_HTML = """<!DOCTYPE html>
         <circle cx="72" cy="16" r="9" fill="#2d1e00" stroke="#f5a623" stroke-width="1.5"/>
         <text x="72" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#f5a623">4</text>
       </svg>
-      <div class="hero-step-title">Get your report</div>
-      <div class="hero-step-sub">Plain-English health score, repair brief, and AI you can ask questions — all from your actual data. Every drive adds to your car's history.</div>
+      <div class="hero-step-title">See what&rsquo;s really going on</div>
+      <div class="hero-step-sub">A plain-English health score, a repair brief, and an AI you can ask follow-up questions. The longer you use it, the more it knows about your specific car.</div>
     </div>
 
   </div>
 
   <!-- Value chips -->
   <div class="hero-value">
-    <div class="hero-value-chip"><span>✦</span>Health score every drive</div>
-    <div class="hero-value-chip"><span>✦</span>Fuel trim &amp; knock detection</div>
-    <div class="hero-value-chip"><span>✦</span>Weeks of early warning</div>
-    <div class="hero-value-chip"><span>✦</span>Ask AI about your data</div>
-    <div class="hero-value-chip"><span>✦</span>History grows with every drive</div>
+    <div class="hero-value-chip"><span>✦</span>Catch problems weeks early</div>
+    <div class="hero-value-chip"><span>✦</span>No mechanic visit required</div>
+    <div class="hero-value-chip"><span>✦</span>Ask AI about your specific car</div>
+    <div class="hero-value-chip"><span>✦</span>Gets smarter with every drive</div>
+    <div class="hero-value-chip"><span>✦</span>Works on any car after 1996</div>
   </div>
 </section>
 
