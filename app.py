@@ -1689,13 +1689,26 @@ _UI_HTML = """<!DOCTYPE html>
   /* Analysis mode cards */
   .mode-cards { display: flex; flex-direction: column; gap: 8px; }
   .mode-card {
+    position: relative;
     display: flex; align-items: flex-start; gap: 10px;
     background: var(--surface2); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 12px; cursor: pointer;
-    transition: border-color .15s, background .15s;
+    transition: border-color .15s, background .15s, box-shadow .15s;
   }
-  .mode-card:hover { border-color: var(--blue); }
-  .mode-card-active { border-color: var(--blue); background: rgba(74,158,255,0.06); }
+  /* Hover on an UNselected card: subtle hint only, clearly weaker than selected */
+  .mode-card:not(.mode-card-active):hover { border-color: var(--muted); background: rgba(255,255,255,0.03); }
+  /* Selected: strong, unmistakable — bright border + glow + tinted fill + check badge */
+  .mode-card-active {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 1px var(--blue), 0 0 0 4px rgba(74,158,255,0.15);
+    background: rgba(74,158,255,0.12);
+  }
+  .mode-card-active .mode-card-title { color: var(--blue); }
+  .mode-card-active::after {
+    content: "\2713"; /* checkmark */
+    position: absolute; top: 8px; right: 10px;
+    color: var(--blue); font-size: 13px; font-weight: 700; line-height: 1;
+  }
   .mode-card-icon { font-size: 20px; line-height: 1; margin-top: 1px; }
   .mode-card-title { font-size: 13px; font-weight: 600; color: var(--text); }
   .mode-card-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
@@ -2413,8 +2426,14 @@ runBtn.addEventListener('click', () => {
 let _analysisMode = 'session';
 function setAnalysisMode(mode) {
   _analysisMode = mode;
-  document.getElementById('modeSession').classList.toggle('mode-card-active', mode === 'session');
-  document.getElementById('modeTrends').classList.toggle('mode-card-active', mode === 'trends');
+  var cards = { session: document.getElementById('modeSession'),
+                trends:  document.getElementById('modeTrends') };
+  Object.keys(cards).forEach(function(key) {
+    var el = cards[key];
+    if (!el) return;
+    if (key === mode) { el.classList.add('mode-card-active'); el.setAttribute('aria-pressed', 'true'); }
+    else              { el.classList.remove('mode-card-active'); el.setAttribute('aria-pressed', 'false'); }
+  });
 }
 
 function resetUI() {
