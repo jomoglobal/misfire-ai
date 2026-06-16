@@ -28,6 +28,8 @@ from tools.session_store import SessionStore, SessionRecord, parse_mhd_filename,
 from pipeline.vehicles import get_vehicle_by_id, build_vehicle_from_meta, list_vehicle_ids
 
 REPO_ROOT = Path(__file__).parent
+# SQLite fallback path. Used only when DATABASE_URL is unset (local dev). On
+# Railway, DATABASE_URL points at Supabase Postgres and this path is ignored.
 SESSION_DB = str(REPO_ROOT / "data" / "sessions.db")
 
 # Public demo sample — committed to the repo so it exists on a clean deploy.
@@ -910,10 +912,7 @@ def _seed_db_if_empty() -> None:
         return
 
     store = SessionStore(SESSION_DB)
-    with store._conn() as conn:
-        count = conn.execute(
-            "SELECT COUNT(*) FROM sessions WHERE vehicle_id = 'IJE0S'"
-        ).fetchone()[0]
+    count = store.count_vehicle_sessions("IJE0S")
 
     if count > 0:
         print(f"[seed] DB already has {count} IJE0S sessions — skipping seed", flush=True)

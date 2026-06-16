@@ -1,11 +1,19 @@
 """
-MisfireAI session record store — SQLite-backed persistence for pipeline runs.
+MisfireAI session record store — persistence for pipeline runs.
 
 Each call to the pipeline saves a SessionRecord so we can do longitudinal
 analysis: STFT drift over time, LTFT trending across sessions, etc.
 
-DB path: data/sessions.db (relative to repo root, created on first use).
-Uses only stdlib: sqlite3, json, uuid, datetime.
+Storage backend is chosen at runtime:
+
+  * If the ``DATABASE_URL`` env var is set, sessions and the visit log live in
+    Postgres (e.g. Supabase). This survives Railway's ephemeral filesystem.
+  * Otherwise we fall back to SQLite at the given ``db_path`` — convenient for
+    local dev with no Postgres instance.
+
+The public surface (SessionStore class, log_visit/get_visit_stats functions,
+SessionRecord, parse_mhd_filename) is identical across backends, so nothing
+else in the app needs to change.
 """
 
 from __future__ import annotations
@@ -16,9 +24,36 @@ import os
 import re
 import sqlite3
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+
+try:  # Postgres is optional — only needed when DATABASE_URL is set.
+    import psycopg2
+    import psycopg2.extras
+except ImportError:  # pragma: no cover - exercised only without the dep
+    psycopg2 = None
+
+
+# ---------------------------------------------------------------------------
+# Backend selection
+# ---------------------------------------------------------------------------
+
+def _database_url() -> str:
+    """Return the configured Postgres URL, or '' to use SQLite."""
+    return os.getenv("DATABASE_URL", "").strip()
+
+
+def _use_postgres() -> bool:
+    url = _database_url()
+    if not url:
+        return False
+    if psycopg2 is None:
+        raise RuntimeError(
+            "DATABASE_URL is set but psycopg2 is not installed. "
+            "Add psycopg2-binary to requirements.txt."
+        )
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -109,10 +144,10 @@ class SessionRecord:
 
 
 # ---------------------------------------------------------------------------
-# SessionStore
+# Schema — one DDL per backend (column types differ slightly)
 # ---------------------------------------------------------------------------
 
-_CREATE_TABLE = """
+_CREATE_TABLE_SQLITE = """
 CREATE TABLE IF NOT EXISTS sessions (
     session_id     TEXT PRIMARY KEY,
     vehicle_id     TEXT,
@@ -133,15 +168,45 @@ CREATE TABLE IF NOT EXISTS sessions (
 )
 """
 
+_CREATE_TABLE_PG = """
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id     TEXT PRIMARY KEY,
+    vehicle_id     TEXT,
+    source         TEXT,
+    file_path      TEXT,
+    file_name      TEXT,
+    recorded_at    TEXT,
+    ingested_at    TEXT,
+    row_count      INTEGER,
+    pids_present   TEXT,
+    families_present TEXT,
+    pid_stats      TEXT,
+    dtcs           TEXT,
+    warnings       TEXT,
+    session_meta   TEXT,
+    overall_score  DOUBLE PRECISION,
+    system_scores  TEXT
+)
+"""
+
 _CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_vehicle_id ON sessions (vehicle_id)",
     "CREATE INDEX IF NOT EXISTS idx_recorded_at ON sessions (recorded_at)",
     "CREATE INDEX IF NOT EXISTS idx_source ON sessions (source)",
 ]
 
-_CREATE_VISIT_TABLE = """
+_CREATE_VISIT_TABLE_SQLITE = """
 CREATE TABLE IF NOT EXISTS visit_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    visited_at  TEXT NOT NULL,
+    ip_hash     TEXT NOT NULL,
+    user_agent  TEXT
+)
+"""
+
+_CREATE_VISIT_TABLE_PG = """
+CREATE TABLE IF NOT EXISTS visit_log (
+    id          BIGSERIAL PRIMARY KEY,
     visited_at  TEXT NOT NULL,
     ip_hash     TEXT NOT NULL,
     user_agent  TEXT
@@ -151,37 +216,110 @@ CREATE TABLE IF NOT EXISTS visit_log (
 _CREATE_VISIT_INDEX = "CREATE INDEX IF NOT EXISTS idx_visit_date ON visit_log (visited_at)"
 
 
+# ---------------------------------------------------------------------------
+# Connection helpers
+# ---------------------------------------------------------------------------
+
+def _pg_connect():
+    conn = psycopg2.connect(_database_url())
+    conn.autocommit = True
+    return conn
+
+
+def _ensure_visit_table_sqlite(conn: sqlite3.Connection) -> None:
+    conn.execute(_CREATE_VISIT_TABLE_SQLITE)
+    conn.execute(_CREATE_VISIT_INDEX)
+
+
+def _ensure_visit_table_pg(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute(_CREATE_VISIT_TABLE_PG)
+        cur.execute(_CREATE_VISIT_INDEX)
+
+
+# ---------------------------------------------------------------------------
+# Visit logging — module-level functions, db_path kept for signature parity
+# ---------------------------------------------------------------------------
+
 def log_visit(db_path: str, ip: str, user_agent: str) -> None:
     """Record a page visit. IP is one-way hashed — never stored raw."""
     ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
     visited_at = datetime.now(timezone.utc).isoformat()
+    ua = user_agent[:200] if user_agent else ""
+
+    if _use_postgres():
+        conn = _pg_connect()
+        try:
+            _ensure_visit_table_pg(conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO visit_log (visited_at, ip_hash, user_agent) VALUES (%s, %s, %s)",
+                    (visited_at, ip_hash, ua),
+                )
+        finally:
+            conn.close()
+        return
+
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
     with sqlite3.connect(db_path) as conn:
-        conn.execute(_CREATE_VISIT_TABLE)
-        conn.execute(_CREATE_VISIT_INDEX)
+        _ensure_visit_table_sqlite(conn)
         conn.execute(
             "INSERT INTO visit_log (visited_at, ip_hash, user_agent) VALUES (?, ?, ?)",
-            (visited_at, ip_hash, user_agent[:200] if user_agent else ""),
+            (visited_at, ip_hash, ua),
         )
 
 
 def get_visit_stats(db_path: str, days: int = 30) -> dict:
     """Return visit counts: total hits and unique IPs per day for the last N days."""
+    cutoff = (
+        datetime.now(timezone.utc) - __import__("datetime").timedelta(days=days)
+    ).isoformat()
+
+    if _use_postgres():
+        conn = _pg_connect()
+        try:
+            _ensure_visit_table_pg(conn)
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT substr(visited_at, 1, 10) AS day,
+                           COUNT(*)                  AS hits,
+                           COUNT(DISTINCT ip_hash)   AS unique_ips
+                    FROM visit_log
+                    WHERE visited_at >= %s
+                    GROUP BY day
+                    ORDER BY day DESC
+                    """,
+                    (cutoff,),
+                )
+                rows = cur.fetchall()
+            # Plain cursor for the totals — two same-named COUNT()s would collide
+            # under RealDictCursor, so read them positionally instead.
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*), COUNT(DISTINCT ip_hash) FROM visit_log")
+                total = cur.fetchone()
+        finally:
+            conn.close()
+        return {
+            "total_hits": total[0],
+            "total_unique_ips": total[1],
+            "days": [dict(r) for r in rows],
+        }
+
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        conn.execute(_CREATE_VISIT_TABLE)
-        conn.execute(_CREATE_VISIT_INDEX)
+        _ensure_visit_table_sqlite(conn)
         rows = conn.execute(
             """
             SELECT substr(visited_at, 1, 10) AS day,
                    COUNT(*)                  AS hits,
                    COUNT(DISTINCT ip_hash)   AS unique_ips
             FROM visit_log
-            WHERE visited_at >= datetime('now', ? || ' days')
+            WHERE visited_at >= ?
             GROUP BY day
             ORDER BY day DESC
             """,
-            (f"-{days}",),
+            (cutoff,),
         ).fetchall()
         total = conn.execute("SELECT COUNT(*), COUNT(DISTINCT ip_hash) FROM visit_log").fetchone()
     return {
@@ -190,34 +328,10 @@ def get_visit_stats(db_path: str, days: int = 30) -> dict:
         "days": [dict(r) for r in rows],
     }
 
-_UPSERT = """
-INSERT INTO sessions (
-    session_id, vehicle_id, source, file_path, file_name,
-    recorded_at, ingested_at, row_count, pids_present, families_present,
-    pid_stats, dtcs, warnings, session_meta, overall_score, system_scores
-) VALUES (
-    :session_id, :vehicle_id, :source, :file_path, :file_name,
-    :recorded_at, :ingested_at, :row_count, :pids_present, :families_present,
-    :pid_stats, :dtcs, :warnings, :session_meta, :overall_score, :system_scores
-)
-ON CONFLICT(session_id) DO UPDATE SET
-    vehicle_id      = excluded.vehicle_id,
-    source          = excluded.source,
-    file_path       = excluded.file_path,
-    file_name       = excluded.file_name,
-    recorded_at     = excluded.recorded_at,
-    ingested_at     = excluded.ingested_at,
-    row_count       = excluded.row_count,
-    pids_present    = excluded.pids_present,
-    families_present = excluded.families_present,
-    pid_stats       = excluded.pid_stats,
-    dtcs            = excluded.dtcs,
-    warnings        = excluded.warnings,
-    session_meta    = excluded.session_meta,
-    overall_score   = excluded.overall_score,
-    system_scores   = excluded.system_scores
-"""
 
+# ---------------------------------------------------------------------------
+# Serialization (shared by both backends — JSON columns are TEXT either way)
+# ---------------------------------------------------------------------------
 
 def _serialize(record: SessionRecord) -> dict[str, Any]:
     return {
@@ -240,7 +354,8 @@ def _serialize(record: SessionRecord) -> dict[str, Any]:
     }
 
 
-def _deserialize(row: sqlite3.Row) -> SessionRecord:
+def _deserialize(row: dict) -> SessionRecord:
+    """Build a SessionRecord from a dict-like row (sqlite3.Row or RealDictRow)."""
     return SessionRecord(
         session_id=      row["session_id"],
         vehicle_id=      row["vehicle_id"] or "",
@@ -261,50 +376,148 @@ def _deserialize(row: sqlite3.Row) -> SessionRecord:
     )
 
 
-class SessionStore:
-    def __init__(self, db_path: str) -> None:
-        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-        self._db_path = db_path
-        with self._conn() as conn:
-            conn.execute(_CREATE_TABLE)
-            for idx in _CREATE_INDEXES:
-                conn.execute(idx)
+_COLUMNS = [
+    "session_id", "vehicle_id", "source", "file_path", "file_name",
+    "recorded_at", "ingested_at", "row_count", "pids_present", "families_present",
+    "pid_stats", "dtcs", "warnings", "session_meta", "overall_score", "system_scores",
+]
 
-    def _conn(self) -> sqlite3.Connection:
+
+# ---------------------------------------------------------------------------
+# SessionStore
+# ---------------------------------------------------------------------------
+
+class SessionStore:
+    """
+    Backend-agnostic session store. Selects Postgres when DATABASE_URL is set,
+    otherwise SQLite at ``db_path``. The public method surface is identical
+    either way, so callers never need to know which backend is active.
+    """
+
+    def __init__(self, db_path: str) -> None:
+        self._db_path = db_path
+        self._pg = _use_postgres()
+        if self._pg:
+            conn = _pg_connect()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(_CREATE_TABLE_PG)
+                    for idx in _CREATE_INDEXES:
+                        cur.execute(idx)
+            finally:
+                conn.close()
+        else:
+            os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+            with self._conn() as conn:
+                conn.execute(_CREATE_TABLE_SQLITE)
+                for idx in _CREATE_INDEXES:
+                    conn.execute(idx)
+
+    # -- connection -------------------------------------------------------
+
+    def _conn(self):
+        """
+        Return a connection usable as a context manager.
+
+        For SQLite this is a sqlite3.Connection with Row factory. For Postgres
+        it's a psycopg2 connection in autocommit mode; querying through it uses
+        the standard cursor protocol. Kept public-ish because app.py's seeder
+        calls ``store._conn()`` directly.
+        """
+        if self._pg:
+            return _pg_connect()
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
+    # -- internal query helpers (backend-aware) ---------------------------
+
+    def _query_all(self, sql_sqlite: str, sql_pg: str, params: tuple) -> list[dict]:
+        if self._pg:
+            conn = _pg_connect()
+            try:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(sql_pg, params)
+                    return [dict(r) for r in cur.fetchall()]
+            finally:
+                conn.close()
+        with self._conn() as conn:
+            rows = conn.execute(sql_sqlite, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def _query_one(self, sql_sqlite: str, sql_pg: str, params: tuple):
+        if self._pg:
+            conn = _pg_connect()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql_pg, params)
+                    return cur.fetchone()
+            finally:
+                conn.close()
+        with self._conn() as conn:
+            return conn.execute(sql_sqlite, params).fetchone()
+
+    # -- writes -----------------------------------------------------------
+
     def save(self, record: SessionRecord) -> None:
         """Upsert a session record by session_id."""
+        data = _serialize(record)
+        if self._pg:
+            placeholders = ", ".join(["%s"] * len(_COLUMNS))
+            updates = ", ".join(
+                f"{c} = EXCLUDED.{c}" for c in _COLUMNS if c != "session_id"
+            )
+            sql = (
+                f"INSERT INTO sessions ({', '.join(_COLUMNS)}) VALUES ({placeholders}) "
+                f"ON CONFLICT (session_id) DO UPDATE SET {updates}"
+            )
+            values = tuple(data[c] for c in _COLUMNS)
+            conn = _pg_connect()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql, values)
+            finally:
+                conn.close()
+            return
+
+        placeholders = ", ".join([f":{c}" for c in _COLUMNS])
+        updates = ", ".join(
+            f"{c} = excluded.{c}" for c in _COLUMNS if c != "session_id"
+        )
+        sql = (
+            f"INSERT INTO sessions ({', '.join(_COLUMNS)}) VALUES ({placeholders}) "
+            f"ON CONFLICT(session_id) DO UPDATE SET {updates}"
+        )
         with self._conn() as conn:
-            conn.execute(_UPSERT, _serialize(record))
+            conn.execute(sql, data)
+
+    # -- reads ------------------------------------------------------------
 
     def get(self, session_id: str) -> SessionRecord | None:
         """Retrieve a single session by ID."""
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()
-        return _deserialize(row) if row else None
+        rows = self._query_all(
+            "SELECT * FROM sessions WHERE session_id = ?",
+            "SELECT * FROM sessions WHERE session_id = %s",
+            (session_id,),
+        )
+        return _deserialize(rows[0]) if rows else None
 
     def get_by_vehicle(self, vehicle_id: str, limit: int = 100) -> list[SessionRecord]:
         """All sessions for a vehicle, newest first."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM sessions WHERE vehicle_id = ? "
-                "ORDER BY recorded_at DESC LIMIT ?",
-                (vehicle_id, limit),
-            ).fetchall()
+        rows = self._query_all(
+            "SELECT * FROM sessions WHERE vehicle_id = ? ORDER BY recorded_at DESC LIMIT ?",
+            "SELECT * FROM sessions WHERE vehicle_id = %s ORDER BY recorded_at DESC LIMIT %s",
+            (vehicle_id, limit),
+        )
         return [_deserialize(r) for r in rows]
 
     def get_recent(self, limit: int = 20) -> list[SessionRecord]:
         """Most recently ingested sessions."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM sessions ORDER BY ingested_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+        rows = self._query_all(
+            "SELECT * FROM sessions ORDER BY ingested_at DESC LIMIT ?",
+            "SELECT * FROM sessions ORDER BY ingested_at DESC LIMIT %s",
+            (limit,),
+        )
         return [_deserialize(r) for r in rows]
 
     def get_trend(self, vehicle_id: str, pid: str, limit: int = 50) -> list[dict]:
@@ -314,13 +527,13 @@ class SessionStore:
         Returns list of {recorded_at, mean, min, max} sorted by recorded_at ascending,
         for the most recent `limit` sessions that contain the pid.
         """
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT recorded_at, pid_stats FROM sessions "
-                "WHERE vehicle_id = ? "
-                "ORDER BY recorded_at DESC LIMIT ?",
-                (vehicle_id, limit),
-            ).fetchall()
+        rows = self._query_all(
+            "SELECT recorded_at, pid_stats FROM sessions WHERE vehicle_id = ? "
+            "ORDER BY recorded_at DESC LIMIT ?",
+            "SELECT recorded_at, pid_stats FROM sessions WHERE vehicle_id = %s "
+            "ORDER BY recorded_at DESC LIMIT %s",
+            (vehicle_id, limit),
+        )
 
         trend = []
         for row in rows:
@@ -346,14 +559,15 @@ class SessionStore:
         Returns list of {recorded_at, overall_score, system_scores}.
         system_scores keys: fueling, cooling, ignition, catalyst.
         """
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT recorded_at, overall_score, system_scores "
-                "FROM sessions "
-                "WHERE vehicle_id = ? AND overall_score IS NOT NULL "
-                "ORDER BY recorded_at ASC LIMIT ?",
-                (vehicle_id, limit),
-            ).fetchall()
+        rows = self._query_all(
+            "SELECT recorded_at, overall_score, system_scores FROM sessions "
+            "WHERE vehicle_id = ? AND overall_score IS NOT NULL "
+            "ORDER BY recorded_at ASC LIMIT ?",
+            "SELECT recorded_at, overall_score, system_scores FROM sessions "
+            "WHERE vehicle_id = %s AND overall_score IS NOT NULL "
+            "ORDER BY recorded_at ASC LIMIT %s",
+            (vehicle_id, limit),
+        )
 
         result = []
         for row in rows:
@@ -367,27 +581,44 @@ class SessionStore:
 
     def count_by_vehicle(self) -> dict[str, int]:
         """Session count grouped by vehicle_id."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT vehicle_id, COUNT(*) as cnt FROM sessions GROUP BY vehicle_id"
-            ).fetchall()
+        rows = self._query_all(
+            "SELECT vehicle_id, COUNT(*) as cnt FROM sessions GROUP BY vehicle_id",
+            "SELECT vehicle_id, COUNT(*) as cnt FROM sessions GROUP BY vehicle_id",
+            (),
+        )
         return {r["vehicle_id"]: r["cnt"] for r in rows}
+
+    def count_vehicle_sessions(self, vehicle_id: str) -> int:
+        """Number of sessions stored for a single vehicle (used by the seeder)."""
+        row = self._query_one(
+            "SELECT COUNT(*) FROM sessions WHERE vehicle_id = ?",
+            "SELECT COUNT(*) FROM sessions WHERE vehicle_id = %s",
+            (vehicle_id,),
+        )
+        return row[0] if row else 0
 
     def summary(self) -> dict:
         """Overall store statistics."""
-        with self._conn() as conn:
-            total = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-            vehicles = conn.execute(
-                "SELECT COUNT(DISTINCT vehicle_id) FROM sessions"
-            ).fetchone()[0]
-            date_row = conn.execute(
-                "SELECT MIN(recorded_at), MAX(recorded_at) FROM sessions"
-            ).fetchone()
+        total_row = self._query_one(
+            "SELECT COUNT(*) FROM sessions",
+            "SELECT COUNT(*) FROM sessions",
+            (),
+        )
+        veh_row = self._query_one(
+            "SELECT COUNT(DISTINCT vehicle_id) FROM sessions",
+            "SELECT COUNT(DISTINCT vehicle_id) FROM sessions",
+            (),
+        )
+        date_row = self._query_one(
+            "SELECT MIN(recorded_at), MAX(recorded_at) FROM sessions",
+            "SELECT MIN(recorded_at), MAX(recorded_at) FROM sessions",
+            (),
+        )
         return {
-            "total_sessions": total,
-            "unique_vehicles": vehicles,
+            "total_sessions": total_row[0] if total_row else 0,
+            "unique_vehicles": veh_row[0] if veh_row else 0,
             "date_range": {
-                "earliest": date_row[0] or "",
-                "latest":   date_row[1] or "",
+                "earliest": (date_row[0] if date_row else "") or "",
+                "latest":   (date_row[1] if date_row else "") or "",
             },
         }
