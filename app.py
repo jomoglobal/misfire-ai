@@ -1697,18 +1697,13 @@ _UI_HTML = """<!DOCTYPE html>
   }
   /* Hover on an UNselected card: subtle hint only, clearly weaker than selected */
   .mode-card:not(.mode-card-active):hover { border-color: var(--muted); background: rgba(255,255,255,0.03); }
-  /* Selected: strong, unmistakable — bright border + glow + tinted fill + check badge */
+  /* Selected: strong, unmistakable — bright border + glow ring + tinted fill */
   .mode-card-active {
     border-color: var(--blue);
     box-shadow: 0 0 0 1px var(--blue), 0 0 0 4px rgba(74,158,255,0.15);
     background: rgba(74,158,255,0.12);
   }
   .mode-card-active .mode-card-title { color: var(--blue); }
-  .mode-card-active::after {
-    content: "\2713"; /* checkmark */
-    position: absolute; top: 8px; right: 10px;
-    color: var(--blue); font-size: 13px; font-weight: 700; line-height: 1;
-  }
   .mode-card-icon { font-size: 20px; line-height: 1; margin-top: 1px; }
   .mode-card-title { font-size: 13px; font-weight: 600; color: var(--text); }
   .mode-card-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
@@ -2335,7 +2330,7 @@ function vehicleImgHtml(make, model, year, altText) {
   const alt = esc(altText || [year, make, model].filter(Boolean).join(' '));
   return '<img src="' + url + '" alt="' + alt + '" ' +
     'style="width:100%;height:140px;object-fit:cover;object-position:center;display:block;border-radius:6px 6px 0 0;" ' +
-    'onerror="this.style.display=\'none\'">';
+    'onerror="this.style.display=&quot;none&quot;">';
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────
@@ -3708,12 +3703,88 @@ def config():
 # Token-protected visitor stats — not linked from UI, not in public docs.
 # Set ADMIN_TOKEN env var to a secret value; requests must include ?token=<value>.
 @app.get("/admin/visits")
-def admin_visits(token: str = "", days: int = 30):
+def admin_visits(token: str = "", days: int = 30, format: str = "html"):
     admin_token = os.getenv("ADMIN_TOKEN", "")
     if not admin_token or token != admin_token:
         from fastapi.responses import Response as _R
         return _R(status_code=403, content="Forbidden")
-    return JSONResponse(get_visit_stats(SESSION_DB, days=min(days, 365)))
+
+    stats = get_visit_stats(SESSION_DB, days=min(days, 365))
+
+    # Keep machine-readable output available for any tooling.
+    if format == "json":
+        return JSONResponse(stats)
+
+    days_rows = stats.get("days", [])
+    # Pretty date like "Sun, Jun 14" from an ISO "YYYY-MM-DD" day key.
+    def _fmt_day(d):
+        try:
+            return datetime.strptime(d, "%Y-%m-%d").strftime("%a, %b %-d, %Y")
+        except Exception:
+            return d
+
+    if days_rows:
+        rows_html = "".join(
+            f"<tr><td>{_fmt_day(r['day'])}</td>"
+            f"<td class='num'>{r['hits']}</td>"
+            f"<td class='num'>{r['unique_ips']}</td></tr>"
+            for r in days_rows
+        )
+        table_html = f"""
+        <table>
+          <thead><tr><th>Day</th><th class='num'>Visits</th><th class='num'>Unique visitors</th></tr></thead>
+          <tbody>{rows_html}</tbody>
+        </table>"""
+    else:
+        table_html = "<p class='empty'>No visits recorded in this window yet.</p>"
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>MisfireAI · Visitor Stats</title>
+<style>
+  :root {{ --bg:#0e1116; --surface:#171c24; --border:#272e3a; --text:#e6edf3; --muted:#8b98a8; --blue:#4a9eff; }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5; padding:32px 20px; }}
+  .wrap {{ max-width:680px; margin:0 auto; }}
+  h1 {{ font-size:22px; margin:0 0 4px; }}
+  .sub {{ color:var(--muted); font-size:14px; margin:0 0 24px; }}
+  .cards {{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:28px; }}
+  .card {{ flex:1; min-width:150px; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:18px 20px; }}
+  .card .big {{ font-size:34px; font-weight:700; color:var(--blue); line-height:1; }}
+  .card .lbl {{ color:var(--muted); font-size:13px; margin-top:6px; }}
+  table {{ width:100%; border-collapse:collapse; background:var(--surface);
+    border:1px solid var(--border); border-radius:12px; overflow:hidden; }}
+  th, td {{ padding:11px 16px; text-align:left; border-bottom:1px solid var(--border); font-size:14px; }}
+  th {{ color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
+  tbody tr:last-child td {{ border-bottom:none; }}
+  .num {{ text-align:right; font-variant-numeric:tabular-nums; }}
+  .empty {{ color:var(--muted); }}
+  .foot {{ color:var(--muted); font-size:12px; margin-top:20px; }}
+  .foot a {{ color:var(--blue); }}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Visitor Stats</h1>
+    <p class="sub">demo.datronex.net · last {min(days, 365)} days</p>
+    <div class="cards">
+      <div class="card"><div class="big">{stats.get('total_hits', 0)}</div><div class="lbl">Total visits (all time)</div></div>
+      <div class="card"><div class="big">{stats.get('total_unique_ips', 0)}</div><div class="lbl">Unique visitors (all time)</div></div>
+    </div>
+    {table_html}
+    <p class="foot">Visitor IPs are one-way hashed — never stored in the clear.
+      Need the raw data? <a href="?token={token}&days={days}&format=json">View as JSON</a>.</p>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(html)
 
 
 @app.get("/test", response_class=HTMLResponse)
