@@ -22,6 +22,7 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from fastapi import FastAPI, Form, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from tools.mcp_server import ingest_file, decode_vin, lookup_tsb, score_vehicle_health
 from tools.session_store import SessionStore, SessionRecord, parse_mhd_filename, log_visit, get_visit_stats
@@ -52,6 +53,11 @@ DEMO_RUNS_PER_IP_PER_DAY = int(os.getenv("DEMO_RUNS_PER_IP_PER_DAY", "5"))
 DEMO_RUNS_GLOBAL_PER_DAY = int(os.getenv("DEMO_RUNS_GLOBAL_PER_DAY", "100"))
 
 app = FastAPI(title="MisfireAI")
+
+# Static assets (public-domain demo vehicle photo, etc.)
+_ASSETS_DIR = Path(__file__).parent / "assets"
+if _ASSETS_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="assets")
 
 
 # ---------------------------------------------------------------------------
@@ -1220,6 +1226,36 @@ _UI_HTML = """<!DOCTYPE html>
   .pipe-sep     { color: var(--orange); }
   .pipe-compound{ color: var(--purple); }
 
+  /* ── AI Report "thinking" placeholder ── */
+  .ai-thinking { display: flex; align-items: center; gap: 14px; padding: 6px 2px; }
+  .ai-thinking-brain { font-size: 26px; line-height: 1; animation: ai-brain-pulse 1.4s ease-in-out infinite; }
+  @keyframes ai-brain-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.85; }
+    50% { transform: scale(1.18); opacity: 1; }
+  }
+  .ai-thinking-body { flex: 1; min-width: 0; }
+  .ai-thinking-headline { font-size: 14px; font-weight: 700; color: var(--purple); display: flex; align-items: center; gap: 8px; }
+  .ai-thinking-dots { display: inline-flex; gap: 4px; }
+  .ai-thinking-dots span {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--purple);
+    animation: ai-dot 1.2s infinite ease-in-out both;
+  }
+  .ai-thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
+  .ai-thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+  @keyframes ai-dot {
+    0%, 80%, 100% { transform: scale(0.5); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+  .ai-thinking-status { font-size: 12px; color: var(--muted); margin-top: 5px; transition: opacity 0.3s; }
+  .ai-thinking-bar { margin-top: 10px; height: 3px; border-radius: 3px; background: var(--border); overflow: hidden; position: relative; }
+  .ai-thinking-bar::after {
+    content: ''; position: absolute; inset: 0; width: 40%; border-radius: 3px;
+    background: var(--purple); animation: ai-bar-slide 1.6s ease-in-out infinite;
+  }
+  @keyframes ai-bar-slide {
+    0% { left: -40%; } 100% { left: 100%; }
+  }
+
   /* ── Result panels ── */
   .panel {
     background: var(--surface);
@@ -1906,7 +1942,7 @@ _UI_HTML = """<!DOCTYPE html>
       <div class="vehicle-context-card">
         <div class="vehicle-img-wrap" id="sidebarVehicleImgWrap">
           <img id="sidebarVehicleImg"
-               src="https://cdn.imagin.studio/getimage?customer=img&make=bmw&modelFamily=3-series&modelYear=2009&angle=01&width=600"
+               src="/assets/demo-bmw-335i.jpg"
                alt="2009 BMW 335i"
                onerror="this.style.display='none';document.getElementById('sidebarVehicleImgFallback').style.display='flex'">
           <div id="sidebarVehicleImgFallback" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;font-size:48px;opacity:0.2;">&#128663;</div>
@@ -2440,6 +2476,7 @@ function resetUI() {
   const ep = document.getElementById('emailPromptPanel');
   if (ep) ep.style.display = 'none';
   ['catch','enrich','sep','compound'].forEach(s => setStage(s, null));
+  if (_aiThinkingTimer) { clearInterval(_aiThinkingTimer); _aiThinkingTimer = null; }
   ['panelCatch','panelEnrich','panelSeparate','panelCompound','panelHITL','panelHistory'].forEach(id => {
     const el = document.getElementById(id);
     el.style.display = 'none';
@@ -2557,7 +2594,7 @@ function handleStageEvent(evt) {
   switch (stage) {
     case 'catch':    renderCatch(data);    setStage('catch', 'done'); setStage('enrich', 'active'); break;
     case 'enrich':   renderEnrich(data);   setStage('enrich', 'done'); setStage('sep', 'active'); break;
-    case 'separate': renderSeparate(data); setStage('sep', 'done'); setStage('compound', 'active'); break;
+    case 'separate': renderSeparate(data); setStage('sep', 'done'); setStage('compound', 'active'); renderCompoundPending(); break;
     case 'compound': renderCompound(data); setStage('compound', 'done'); showHistoryPromptIfAvailable(); showEmailPrompt(); break;
     case 'hitl':     if (data.triggered) renderHITL(data); break;
     case 'done':     break;
@@ -2806,7 +2843,53 @@ function formatAssessment(text) {
     .join('');
 }
 
+// Shown the instant SEPARATE finishes, so the user knows the AI report is still
+// being written and the best part is yet to come. Replaced by renderCompound().
+let _aiThinkingTimer = null;
+function renderCompoundPending() {
+  const el = document.getElementById('panelCompound');
+  if (!el) return;
+
+  el.innerHTML =
+    '<div class="panel-header">' +
+      '<div class="panel-icon">A</div>' +
+      '<div class="panel-title">AI Report &mdash; Diagnostic Summary</div>' +
+      '<div class="panel-subtitle"><span class="chip" style="color:var(--purple);border-color:var(--purple);">Generating&hellip;</span></div>' +
+    '</div>' +
+    '<div class="panel-body">' +
+      '<div class="ai-thinking">' +
+        '<div class="ai-thinking-brain">&#129504;</div>' +
+        '<div class="ai-thinking-body">' +
+          '<div class="ai-thinking-headline">Writing your report' +
+            '<span class="ai-thinking-dots"><span></span><span></span><span></span></span>' +
+          '</div>' +
+          '<div class="ai-thinking-status" id="aiThinkingStatus">Reviewing fuel trims and timing&hellip;</div>' +
+          '<div class="ai-thinking-bar"></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  showPanel(el);
+
+  // Rotate through what the model is doing so the wait reads as work, not a hang.
+  const steps = [
+    'Reviewing fuel trims and timing&hellip;',
+    'Cross-referencing this drive against the vehicle history&hellip;',
+    'Checking knock retard and boost behavior&hellip;',
+    'Looking for drift the single-session view can\\'t see&hellip;',
+    'Drafting the plain-language summary&hellip;',
+  ];
+  let i = 0;
+  if (_aiThinkingTimer) clearInterval(_aiThinkingTimer);
+  _aiThinkingTimer = setInterval(() => {
+    i = (i + 1) % steps.length;
+    const s = document.getElementById('aiThinkingStatus');
+    if (s) { s.style.opacity = '0'; setTimeout(() => { s.innerHTML = steps[i]; s.style.opacity = '1'; }, 200); }
+  }, 1800);
+}
+
 function renderCompound(d) {
+  if (_aiThinkingTimer) { clearInterval(_aiThinkingTimer); _aiThinkingTimer = null; }
   const el = document.getElementById('panelCompound');
   const urgency = d.urgency || 'UNKNOWN';
 
