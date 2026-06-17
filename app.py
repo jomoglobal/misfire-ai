@@ -1691,13 +1691,14 @@ _UI_HTML = """<!DOCTYPE html>
     border: 1px solid var(--border); overflow: hidden;
   }
   .vehicle-img-wrap {
-    width: 100%; height: 130px; background: #0a0f16;
+    width: 100%; height: 130px;
+    background: radial-gradient(ellipse at center, #1a2433 0%, #0a0f16 100%);
     display: flex; align-items: center; justify-content: center;
     overflow: hidden; position: relative;
   }
   .vehicle-img-wrap img {
-    width: 100%; height: 100%; object-fit: cover; object-position: center;
-    display: block;
+    width: 100%; height: 100%; object-fit: contain; object-position: center;
+    display: block; padding: 8px 10px;
   }
   .vehicle-img-fallback {
     font-size: 48px; opacity: 0.25;
@@ -1942,7 +1943,7 @@ _UI_HTML = """<!DOCTYPE html>
       <div class="vehicle-context-card">
         <div class="vehicle-img-wrap" id="sidebarVehicleImgWrap">
           <img id="sidebarVehicleImg"
-               src="/assets/demo-bmw-335i.jpg"
+               src="/assets/demo-bmw-335i-nobg.png"
                alt="2009 BMW 335i"
                onerror="this.style.display='none';document.getElementById('sidebarVehicleImgFallback').style.display='flex'">
           <div id="sidebarVehicleImgFallback" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;font-size:48px;opacity:0.2;">&#128663;</div>
