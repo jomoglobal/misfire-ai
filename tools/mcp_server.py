@@ -126,6 +126,73 @@ def _read_csv(file_path: str) -> tuple[list[str], list[dict]]:
     return raw_cols, rows
 
 
+def _is_vbo_file(file_path: str) -> bool:
+    """Return True if the file looks like a Dragy VBO (has [header] section marker)."""
+    try:
+        with open(file_path, encoding="utf-8-sig", errors="replace") as f:
+            non_blank = 0
+            for line in f:
+                line = line.strip()
+                if line == "[header]":
+                    return True
+                if line:
+                    non_blank += 1
+                    if non_blank >= 10:
+                        # [header] is always within the first few non-blank lines
+                        break
+    except OSError:
+        pass
+    return False
+
+
+def _read_vbo(file_path: str) -> tuple[list[str], list[dict]]:
+    """
+    Parse a Dragy .vbo file into (raw_cols, rows) matching _read_csv's output shape.
+
+    VBO format:
+      [header]        — one channel name per line
+      [channel units] — one unit per line (may be empty)
+      [comments]      — free-text metadata
+      [column names]  — single space-delimited line with all column names
+      [data]          — one space-delimited data row per line
+    """
+    with open(file_path, encoding="utf-8-sig", errors="replace") as f:
+        content = f.read()
+
+    # Normalize CRLF so all regex anchors and splitlines work uniformly
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
+
+    raw_cols: list[str] = []
+    rows: list[dict] = []
+
+    # Extract [column names] section — a single space-delimited line
+    col_match = re.search(r'\[column names\]\s*\n([^\[]+)', content)
+    if col_match:
+        col_line = col_match.group(1).strip()
+        raw_cols = col_line.split()
+
+    if not raw_cols:
+        return raw_cols, rows
+
+    # Extract [data] section — space-delimited rows
+    data_match = re.search(r'\[data\]\s*\n([\s\S]*?)(?:\n\[|\Z)', content)
+    if not data_match:
+        return raw_cols, rows
+
+    data_lines = [l.strip() for l in data_match.group(1).splitlines() if l.strip()]
+    if not data_lines:
+        return raw_cols, rows
+
+    for line in data_lines:
+        parts = line.split()
+        if len(parts) < max(1, len(raw_cols) // 2):
+            # Truly malformed / short trailing row — skip rather than abort
+            continue
+        rows.append(dict(zip(raw_cols, parts)))
+
+    return raw_cols, rows
+
+
 def _ingest_rows(
     source: str,
     raw_cols: list[str],
@@ -242,7 +309,10 @@ def ingest_file(file_path: str, source: str = "auto", max_rows: int = 500) -> st
         return json.dumps({"error": f"File not found: {file_path}"})
 
     try:
-        raw_cols, rows = _read_csv(file_path)
+        if _is_vbo_file(file_path):
+            raw_cols, rows = _read_vbo(file_path)
+        else:
+            raw_cols, rows = _read_csv(file_path)
 
         if not rows:
             return json.dumps({"error": "File is empty or has no data rows"})
@@ -667,7 +737,7 @@ def ingest_batch(
     max_files: int = 50,
 ) -> str:
     """
-    Ingest all CSV files in a folder, save each as a SessionRecord to the
+    Ingest all CSV and VBO files in a folder, save each as a SessionRecord to the
     session store, and return a summary.
 
     Returns JSON with:
@@ -683,11 +753,11 @@ def ingest_batch(
 
     csv_files = sorted(
         p for p in Path(folder_path).iterdir()
-        if p.suffix.lower() == ".csv"
+        if p.suffix.lower() in (".csv", ".vbo")
     )[:max_files]
 
     if not csv_files:
-        return json.dumps({"error": "No CSV files found in folder"})
+        return json.dumps({"error": "No CSV or VBO files found in folder"})
 
     store = SessionStore(_SESSION_DB)
 
