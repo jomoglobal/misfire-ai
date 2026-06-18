@@ -27,6 +27,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "SHORT_TERM_FUEL_TRIM_BANK_1",
             "cephasax": "SHORT TERM FUEL TRIM BANK 1",
             "isay_gerard": "Ajuste de combustible a corto plazo (Banco 1)",
+            "dragy": "absent",
         },
     },
     "STFT_B2": {
@@ -39,6 +40,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "SHORT_TERM_FUEL_TRIM_BANK_2",
             "cephasax": "SHORT TERM FUEL TRIM BANK 2",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "LTFT_B1": {
@@ -51,6 +53,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "LONG_TERM_FUEL_TRIM_BANK_1",
             "cephasax": "absent",
             "isay_gerard": "Ajuste de combustible a largo plazo (Banco 1)",
+            "dragy": "absent",
         },
     },
     "LTFT_B2": {
@@ -63,6 +66,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "LONG_TERM_FUEL_TRIM_BANK_2",
             "cephasax": "LONG TERM FUEL TRIM BANK 2",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "AFR_B1": {
@@ -75,6 +79,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "AFR_B2": {
@@ -87,6 +92,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "O2_VOLT_B1S2": {
@@ -99,6 +105,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "Voltaje del sensor de labda (Banco 1 - Sensor 2)",
+            "dragy": "absent",
         },
     },
     "O2_LAMBDA_B1S1": {
@@ -111,6 +118,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "EQUIV_RATIO",
             "isay_gerard": "Relación de equivalencia del sensor de O2 (Banco 1 - Sensor 1)",
+            "dragy": "absent",
         },
     },
     "O2_CURRENT_B1S1": {
@@ -123,6 +131,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "Corriente del sensor de O2 (Banco 1 - Sensor 1)",
+            "dragy": "absent",
         },
     },
     "EQUIV_RATIO": {
@@ -135,6 +144,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "EQUIV_RATIO",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "FUEL_PRESSURE": {
@@ -147,6 +157,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "FUEL_PRESSURE",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "FUEL_RAIL_PSI": {
@@ -159,6 +170,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     # ── IGNITION ──────────────────────────────────────────────────────────────
@@ -172,6 +184,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "TIMING_ADVANCE",
             "cephasax": "TIMING_ADVANCE",
             "isay_gerard": "Avance de tiempo de encendido",
+            "dragy": "timing_advance-obd",
         },
     },
     "TIMING_CYL1": {
@@ -184,6 +197,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "TIMING_CYL2": {
@@ -196,6 +210,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "TIMING_CYL3": {
@@ -208,6 +223,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "TIMING_CYL4": {
@@ -220,6 +236,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "TIMING_CYL5": {
@@ -232,6 +249,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "TIMING_CYL6": {
@@ -244,6 +262,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "KNOCK_RETARD": {
@@ -256,6 +275,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     # ── THERMAL ──────────────────────────────────────────────────────────────
@@ -269,6 +289,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "COOLANT_TEMPERATURE",
             "cephasax": "ENGINE_COOLANT_TEMP",
             "isay_gerard": "Temperatura del líquido de enfriamiento del motor",
+            "dragy": "coolant_temp-obd",
         },
     },
     "IAT": {
@@ -281,6 +302,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "INTAKE_AIR_TEMP",
             "cephasax": "AIR_INTAKE_TEMP",
             "isay_gerard": "Temperatura del aire del colector de admisión",
+            "dragy": "intake_temp-obd",
         },
     },
     "OIL_TEMP": {
@@ -293,6 +315,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "EGT": {
@@ -305,6 +328,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "TRANS_TEMP": {
@@ -317,6 +341,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "AMB_TEMP": {
@@ -329,6 +354,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "AMBIENT_AIR_TEMP",
             "isay_gerard": "Temperatura ambiente",
+            "dragy": "absent",
         },
     },
     # ── BOOST ────────────────────────────────────────────────────────────────
@@ -342,6 +368,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "BOOST_TARGET": {
@@ -354,6 +381,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "WGDC_B1": {
@@ -366,6 +394,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "WGDC_B2": {
@@ -378,6 +407,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "WGDC_BASE": {
@@ -390,6 +420,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "WGDC_AFTER_PID": {
@@ -402,6 +433,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     # ── CATALYST ─────────────────────────────────────────────────────────────
@@ -415,6 +447,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "CATALYST_TEMPERATURE_BANK1_SENSOR1",
             "cephasax": "absent",
             "isay_gerard": "Temperatura del catalizador (Banco 1 - Sensor 1)",
+            "dragy": "absent",
         },
     },
     "CAT_TEMP_B1S2": {
@@ -427,6 +460,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "CATALYST_TEMPERATURE_BANK1_SENSOR2",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     # ── FUEL_SUPPLY ──────────────────────────────────────────────────────────
@@ -440,6 +474,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "MAF",
             "cephasax": "MAF",
             "isay_gerard": "absent",
+            "dragy": "manifold_flow-obd",
         },
     },
     "MAF_REQ": {
@@ -452,6 +487,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "MAP": {
@@ -464,6 +500,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "INTAKE_MANIFOLD_PRESSURE",
             "cephasax": "INTAKE_MANIFOLD_PRESSURE",
             "isay_gerard": "Presión absoluta del colector de admisión",
+            "dragy": "absent",
         },
     },
     "LOAD": {
@@ -476,6 +513,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "ENGINE_LOAD",
             "cephasax": "ENGINE_LOAD",
             "isay_gerard": "Carga calculada del motor",
+            "dragy": "engine_load-obd",
         },
     },
     "THROTTLE": {
@@ -488,6 +526,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "THROTTLE",
             "cephasax": "THROTTLE_POS",
             "isay_gerard": "absent",
+            "dragy": "throttle_pos-obd",
         },
     },
     "ACCEL_PED": {
@@ -500,6 +539,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     # ── COMPOSITION ──────────────────────────────────────────────────────────
@@ -513,6 +553,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "FUEL_INTERP": {
@@ -525,6 +566,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "FUEL_MODE": {
@@ -537,6 +579,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     # ── EXHAUST ──────────────────────────────────────────────────────────────
@@ -550,6 +593,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "OIL_PRESSURE_NXM": {
@@ -562,6 +606,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     # ── DRIVETRAIN ───────────────────────────────────────────────────────────
@@ -575,6 +620,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "ENGINE_RPM",
             "cephasax": "ENGINE_RPM",
             "isay_gerard": "RPM del motor",
+            "dragy": "rpm-obd",
         },
     },
     "VSS": {
@@ -587,6 +633,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "VEHICLE_SPEED",
             "cephasax": "SPEED",
             "isay_gerard": "Velocidad",
+            "dragy": "speed-obd",
         },
     },
     "GEAR": {
@@ -599,6 +646,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "TORQUE_ACTUAL": {
@@ -611,6 +659,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "RUN_TIME": {
@@ -623,6 +672,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "ENGINE_RUN_TINE",
             "cephasax": "absent",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     # ── META ─────────────────────────────────────────────────────────────────
@@ -636,6 +686,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "TROUBLE_CODES",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "DTC_COUNT": {
@@ -648,6 +699,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "DTC_NUMBER",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "VEHICLE_MARK": {
@@ -660,6 +712,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "MARK",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "VEHICLE_MODEL": {
@@ -672,6 +725,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "MODEL",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "VEHICLE_YEAR": {
@@ -684,6 +738,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "CAR_YEAR",
             "isay_gerard": "absent",
+            "dragy": "absent",
         },
     },
     "MIL_DISTANCE": {
@@ -696,6 +751,7 @@ SIGNAL_SCHEMA: dict[str, dict] = {
             "carobd": "absent",
             "cephasax": "absent",
             "isay_gerard": "Distancia recorrida con la luz indicadora de falla (MIL) encendida",
+            "dragy": "absent",
         },
     },
 }
@@ -855,6 +911,25 @@ SOURCE_COLUMN_MAP: dict[tuple[str, str], str] = {
     ("cephasax", "FUEL_LEVEL"):                            None,   # not a diagnostic PID
     ("cephasax", "FUEL_ECONOMY"):                          None,
     ("cephasax", "FUEL_TYPE"):                             None,
+    # ── DRAGY VBO ────────────────────────────────────────────────────────────
+    # OBD channels (from [column names] line in .vbo export)
+    ("dragy", "rpm-obd"):             "RPM",
+    ("dragy", "speed-obd"):           "VSS",
+    ("dragy", "coolant_temp-obd"):    "ECT",
+    ("dragy", "intake_temp-obd"):     "IAT",
+    ("dragy", "manifold_flow-obd"):   "MAF",
+    ("dragy", "throttle_pos-obd"):    "THROTTLE",
+    ("dragy", "engine_load-obd"):     "LOAD",
+    ("dragy", "timing_advance-obd"):  "TIMING_ADV",
+    # GPS/motion channels — no canonical home, explicitly skip
+    ("dragy", "sats"):                None,
+    ("dragy", "time"):                None,
+    ("dragy", "lat"):                 None,
+    ("dragy", "long"):                None,
+    ("dragy", "velocity"):            None,   # GPS speed km/h, duplicate of speed-obd
+    ("dragy", "heading"):             None,
+    ("dragy", "height"):              None,
+    ("dragy", "acceleration-obd"):    None,   # computed acceleration, not a PID
     # ── ISAY GERARD ──────────────────────────────────────────────────────────
     # Full headers with unit brackets (exact)
     ("isay_gerard", "RPM del motor [rpm]"):                                                    "RPM",
@@ -990,6 +1065,10 @@ def detect_source(columns: list[str]) -> str:
     """Return the source name based on distinctive column patterns."""
     col_set = set(columns)
     bare_set = set(_strip_units_detect(c) for c in columns)
+    # Dragy VBO: columns end with -obd suffix (e.g. rpm-obd, speed-obd)
+    # Check before other sources since '-obd' suffix is unambiguous
+    if any(c.endswith("-obd") for c in col_set):
+        return "dragy"
     # MHD: unique headers with (*F) style or MHD version string
     if any(c.startswith("MHD") for c in col_set):
         return "mhd"
